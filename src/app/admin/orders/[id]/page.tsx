@@ -3,37 +3,61 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+
+type Order = {
+  id: number
+  customer_name: string
+  phone: string
+  address: string
+  items: string
+  total_price: string | null
+  status: string
+  created_at: string
+}
 
 function OrderDetailContent() {
   const router = useRouter()
   const params = useParams()
-  const orderId = params?.id
+  const rawId = params?.id
+  const orderId = Array.isArray(rawId) ? rawId[0] : rawId
 
-  const [order, setOrder] = useState<any>(null)
+  const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const isLoggedIn = localStorage.getItem('dscpl_admin_logged')
-    if (!isLoggedIn) {
-      router.replace('/admin/login')
-      return
+    if (!orderId) return
+
+    const init = async () => {
+      const { data: sessionData } = await supabase.auth.getSession()
+      if (!sessionData.session) {
+        router.replace('/admin/login')
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Gagal memuat pesanan', error.message)
+      }
+      if (data) setOrder(data as Order)
+      setLoading(false)
     }
 
-    const savedOrders = JSON.parse(localStorage.getItem('dscpl_orders') || '[]')
-    const found = savedOrders.find((o: any) => o.id.toString() === orderId)
-    
-    if (found) {
-      setOrder(found)
-    }
-    setLoading(false)
+    init()
   }, [orderId, router])
 
-  const handleStatusChange = (newStatus: string) => {
-    const savedOrders = JSON.parse(localStorage.getItem('dscpl_orders') || '[]')
-    const updatedOrders = savedOrders.map((o: any) => 
-      o.id.toString() === orderId ? { ...o, status: newStatus } : o
-    )
-    localStorage.setItem('dscpl_orders', JSON.stringify(updatedOrders))
+  const handleStatusChange = async (newStatus: string) => {
+    if (!order) return
+    const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', order.id)
+    if (error) {
+      alert('Gagal memperbarui status pesanan.')
+      return
+    }
     setOrder({ ...order, status: newStatus })
     alert('Status pesanan berhasil diperbarui!')
   }
@@ -52,10 +76,10 @@ function OrderDetailContent() {
   }
 
   const waMessage = encodeURIComponent(
-    `Halo Kak *${order.customerName}*, terima kasih sudah memesan di *DSCPL WEAR*!\n\n` +
+    `Halo Kak *${order.customer_name}*, terima kasih sudah memesan di *DSCPL WEAR*!\n\n` +
     `Berikut adalah detail pesanan Anda (ID: #${order.id}):\n` +
     `- Item: ${order.items || 'Custom Apparel'}\n` +
-    `- Total: ${order.totalPrice || 'Rp 0'}\n` +
+    `- Total: ${order.total_price || 'Rp 0'}\n` +
     `- Status: *${order.status || 'Pending'}*\n\n` +
     `Pesanan Anda sedang kami proses ya Kak. Silakan kabari jika ada catatan tambahan!`
   )
@@ -72,6 +96,7 @@ function OrderDetailContent() {
               ← Kembali ke Daftar Pesanan
             </Link>
             <h1 className="text-2xl font-black text-black">Detail Pesanan #{order.id}</h1>
+            <p className="text-[11px] text-gray-400 mt-1">{new Date(order.created_at).toLocaleString('id-ID')}</p>
           </div>
           <span className="bg-black text-white text-xs font-bold px-4 py-2 rounded-xl">
             {order.status || 'Pending'}
@@ -86,7 +111,7 @@ function OrderDetailContent() {
             <div className="space-y-3 text-xs">
               <div>
                 <span className="text-gray-500 block">Nama Lengkap</span>
-                <span className="font-bold text-black text-sm">{order.customerName}</span>
+                <span className="font-bold text-black text-sm">{order.customer_name}</span>
               </div>
               <div>
                 <span className="text-gray-500 block">No. WhatsApp</span>
@@ -105,7 +130,7 @@ function OrderDetailContent() {
                   href={`https://wa.me/${cleanPhone}?text=${waMessage}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition uppercase tracking-wider shadow-sm cursor-pointer block text-center"
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 transition uppercase tracking-wider shadow-sm cursor-pointer text-center"
                 >
                   💬 Kirim Konfirmasi via WhatsApp
                 </a>
@@ -125,7 +150,7 @@ function OrderDetailContent() {
 
             <div className="space-y-1 text-xs pt-2">
               <span className="text-gray-500 block">Total Pembayaran</span>
-              <span className="text-lg font-black text-red-600">{order.totalPrice || 'Rp 0'}</span>
+              <span className="text-lg font-black text-red-600">{order.total_price || 'Rp 0'}</span>
             </div>
 
             <div className="pt-4 border-t space-y-2">
@@ -137,8 +162,8 @@ function OrderDetailContent() {
               >
                 <option value="Pending">Pending</option>
                 <option value="Diproses">Sedang Diproses</option>
-                <option value="Selesai">Selesai</option>
                 <option value="Dikirim">Dikirim</option>
+                <option value="Selesai">Selesai</option>
               </select>
             </div>
           </div>

@@ -4,31 +4,58 @@ import { Suspense, useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SizeChartModal from '@/components/SizeChartModal'
+import { supabase } from '@/lib/supabase'
+
+type Product = {
+  id: number
+  title: string
+  category: string
+  price: string
+  originalPrice: string | null
+  image: string | null
+}
 
 function ProductDetail() {
   const params = useParams()
   const router = useRouter()
-  const productId = params?.id
+  const rawId = params?.id
+  const productId = Array.isArray(rawId) ? rawId[0] : rawId
 
-  const [product, setProduct] = useState<any>(null)
-  const [selectedSize, setSelectedSize] = useState('M - Regular')
+  const [product, setProduct] = useState<Product | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [selectedSize, setSelectedSize] = useState('M')
   const [quantity, setQuantity] = useState(1)
   const [fileName, setFileName] = useState('')
   const [isSizeChartOpen, setIsSizeChartOpen] = useState(false)
 
   useEffect(() => {
-    const saved = localStorage.getItem('dscpl_store_products')
-    if (saved) {
-      try {
-        const products = JSON.parse(saved)
-        const found = products.find((p: any) => p.id.toString() === productId)
-        if (found) {
-          setProduct(found)
-        }
-      } catch (e) {
-        console.error('Gagal memuat detail produk', e)
+    if (!productId) return
+
+    const loadProduct = async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .eq('id', productId)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Gagal memuat detail produk', error.message)
       }
+
+      if (data) {
+        setProduct({
+          id: data.id,
+          title: data.title,
+          category: data.category,
+          price: data.price,
+          originalPrice: data.original_price,
+          image: data.image
+        })
+      }
+      setLoading(false)
     }
+
+    loadProduct()
   }, [productId])
 
   const handleAddToCart = () => {
@@ -46,9 +73,10 @@ function ProductDetail() {
       designFile: fileName || 'Tanpa file / Custom chat'
     }
 
+    // Keranjang memang disimpan di browser pembeli sampai mereka checkout
     const existingCart = JSON.parse(localStorage.getItem('dscpl_cart') || '[]')
     const updatedCart = [...existingCart, cartItem]
-    
+
     localStorage.setItem('dscpl_cart', JSON.stringify(updatedCart))
     window.dispatchEvent(new Event('dscpl_cart_updated'))
 
@@ -56,10 +84,18 @@ function ProductDetail() {
     router.push('/checkout')
   }
 
-  if (!product) {
+  if (loading) {
     return (
       <main className="min-h-screen bg-white text-black py-20 px-4 text-center">
         <h1 className="text-sm font-bold">Memuat Detail Produk...</h1>
+      </main>
+    )
+  }
+
+  if (!product) {
+    return (
+      <main className="min-h-screen bg-white text-black py-20 px-4 text-center">
+        <h1 className="text-sm font-bold">Produk tidak ditemukan.</h1>
         <Link href="/products" className="text-xs text-blue-600 underline mt-3 inline-block">← Kembali ke Katalog</Link>
       </main>
     )
@@ -82,7 +118,9 @@ function ProductDetail() {
           {/* Sisi Kiri: Foto */}
           <div className="space-y-4">
             <div className="bg-gray-100 rounded-3xl overflow-hidden border border-gray-200 h-[450px]">
-              <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
+              {product.image && (
+                <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
+              )}
             </div>
           </div>
 

@@ -3,32 +3,40 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 
 export default function AdminLoginPage() {
   const router = useRouter()
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    // Jika sudah login, langsung lempar ke dashboard admin, tidak boleh akses halaman login
-    const isLoggedIn = localStorage.getItem('dscpl_is_admin')
-    if (isLoggedIn === 'true') {
-      router.replace('/admin/orders')
-    }
+    // Jika sudah login, langsung arahkan ke dashboard admin
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        router.replace('/admin/orders')
+      }
+    })
   }, [router])
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Validasi login admin (bisa disesuaikan, misal admin / dscpl2026)
-    if (username === 'admin' && password === 'dscpl123') {
-      localStorage.setItem('dscpl_is_admin', 'true')
-      window.dispatchEvent(new Event('dscpl_auth_updated'))
-      alert('Login Berhasil! Selamat datang di Panel Super Admin DSCPL WEAR.')
-      router.replace('/admin/orders')
-    } else {
-      alert('Username atau Password salah! (Coba: admin / dscpl123)')
+    setLoading(true)
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password
+    })
+
+    setLoading(false)
+
+    if (error) {
+      alert('Email atau password salah.')
+      return
     }
+
+    router.replace('/admin/orders')
   }
 
   return (
@@ -45,12 +53,12 @@ export default function AdminLoginPage() {
 
         <form onSubmit={handleLogin} className="space-y-4 text-xs">
           <div>
-            <label className="block font-bold mb-1 text-black">Username</label>
+            <label className="block font-bold mb-1 text-black">Email</label>
             <input
-              type="text"
-              placeholder="admin"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              type="email"
+              placeholder="email@admin.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-gray-50 border border-gray-300 rounded-xl p-3 font-semibold text-black focus:outline-none"
               required
             />
@@ -70,9 +78,10 @@ export default function AdminLoginPage() {
 
           <button
             type="submit"
-            className="w-full bg-black hover:bg-gray-800 text-white font-black py-3.5 rounded-xl uppercase tracking-wider transition cursor-pointer text-xs shadow-md"
+            disabled={loading}
+            className="w-full bg-black hover:bg-gray-800 disabled:opacity-60 text-white font-black py-3.5 rounded-xl uppercase tracking-wider transition cursor-pointer text-xs shadow-md"
           >
-            MASUK DASHBOARD
+            {loading ? 'MEMPROSES...' : 'MASUK DASHBOARD'}
           </button>
         </form>
 

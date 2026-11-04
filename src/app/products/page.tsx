@@ -3,67 +3,103 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+
+type Product = {
+  id: number
+  title: string
+  category: string
+  price: string
+  originalPrice: string | null
+  image: string | null
+}
+
+type Review = {
+  id: number
+  name: string
+  rating: number
+  comment: string
+  date: string
+}
 
 function ProductsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const categoryParam = searchParams.get('category') || 'Semua Katalog'
 
-  const [products, setProducts] = useState<any[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
 
-  // State untuk Ulasan Pelanggan yang tersimpan permanen di localStorage
-  const [reviews, setReviews] = useState<any[]>([])
+  const [reviews, setReviews] = useState<Review[]>([])
   const [newName, setNewName] = useState('')
   const [newComment, setNewComment] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    // 1. Muat Produk Admin
-    const fetchAdminProducts = () => {
-      const data = localStorage.getItem('dscpl_store_products')
-      if (data) {
-        try {
-          setProducts(JSON.parse(data))
-        } catch (err) {
-          setProducts([])
-        }
-      }
-    }
+    const loadProducts = async () => {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-    // 2. Muat Ulasan Permanen dari localStorage
-    const fetchReviews = () => {
-      const savedReviews = localStorage.getItem('dscpl_product_reviews')
-      if (savedReviews) {
-        try {
-          setReviews(JSON.parse(savedReviews))
-        } catch (err) {
-          setReviews([])
-        }
+      if (error) {
+        console.error('Gagal memuat produk', error.message)
+        setProducts([])
       } else {
-        // Ulasan default awal jika kosong
-        const defaultReviews = [
-          { id: 1, name: 'Reza Pratama', rating: 5, comment: 'Kualitas sablon DTF-nya tajam banget, bahan topinya kokoh. Mantap DSCPL WEAR!', date: '2 Nov 2026' },
-          { id: 2, name: 'Dimas Anggara', rating: 5, comment: 'Pengiriman cepat area Depok, admin ramah dan hasil kaosnya pas di badan.', date: '3 Nov 2026' }
-        ]
-        setReviews(defaultReviews)
-        localStorage.setItem('dscpl_product_reviews', JSON.stringify(defaultReviews))
+        setProducts(
+          (data || []).map((p: any) => ({
+            id: p.id,
+            title: p.title,
+            category: p.category,
+            price: p.price,
+            originalPrice: p.original_price,
+            image: p.image
+          }))
+        )
+      }
+      setLoadingProducts(false)
+    }
+
+    const loadReviews = async () => {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Gagal memuat ulasan', error.message)
+        setReviews([])
+      } else {
+        setReviews(
+          (data || []).map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            rating: r.rating,
+            comment: r.comment,
+            date: new Date(r.created_at).toLocaleDateString('id-ID', {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric'
+            })
+          }))
+        )
       }
     }
 
-    fetchAdminProducts()
-    fetchReviews()
-
-    window.addEventListener('storage', fetchAdminProducts)
-    window.addEventListener('dscpl_products_updated', fetchAdminProducts)
-
-    return () => {
-      window.removeEventListener('storage', fetchAdminProducts)
-      window.removeEventListener('dscpl_products_updated', fetchAdminProducts)
+    const checkAdmin = async () => {
+      const { data } = await supabase.auth.getSession()
+      setIsAdmin(!!data.session)
     }
+
+    loadProducts()
+    loadReviews()
+    checkAdmin()
   }, [])
 
-  const filteredProducts = categoryParam === 'Semua Katalog'
-    ? products
-    : products.filter(p => p.category?.toLowerCase() === categoryParam.toLowerCase())
+  const filteredProducts =
+    categoryParam === 'Semua Katalog'
+      ? products
+      : products.filter((p) => p.category?.toLowerCase() === categoryParam.toLowerCase())
 
   const categoriesList = [
     { name: 'Semua Katalog', value: 'Semua Katalog' },
@@ -77,36 +113,50 @@ function ProductsContent() {
     { name: 'Polosan', value: 'Polosan' }
   ]
 
-  // Fungsi Kirim Ulasan (Disimpan Permanen)
-  const handleAddReview = (e: React.FormEvent) => {
+  // Kirim ulasan (disimpan di database, terlihat oleh semua pengunjung)
+  const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newName || !newComment) return
+    if (!newName.trim() || !newComment.trim()) return
 
-    const review = {
-      id: Date.now(),
-      name: newName,
-      rating: 5,
-      comment: newComment,
-      date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+    const { data, error } = await supabase
+      .from('reviews')
+      .insert({ name: newName.trim(), rating: 5, comment: newComment.trim() })
+      .select()
+      .single()
+
+    if (error || !data) {
+      alert('Maaf, ulasan gagal dikirim. Coba lagi sebentar lagi.')
+      return
     }
 
-    const updatedReviews = [review, ...reviews]
-    setReviews(updatedReviews)
-    localStorage.setItem('dscpl_product_reviews', JSON.stringify(updatedReviews))
+    const review: Review = {
+      id: data.id,
+      name: data.name,
+      rating: data.rating,
+      comment: data.comment,
+      date: new Date(data.created_at).toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric'
+      })
+    }
 
+    setReviews([review, ...reviews])
     setNewName('')
     setNewComment('')
-    alert('Terima kasih! Ulasan Anda berhasil ditambahkan dan tersimpan permanen.')
+    alert('Terima kasih! Ulasan Anda berhasil ditambahkan.')
   }
 
-  // Fungsi Hapus Ulasan (Khusus Mode Admin)
-  const handleDeleteReview = (id: number) => {
-    const isAdmin = confirm('Hapus ulasan ini? (Fitur khusus Mode Admin)')
-    if (isAdmin) {
-      const updatedReviews = reviews.filter(rev => rev.id !== id)
-      setReviews(updatedReviews)
-      localStorage.setItem('dscpl_product_reviews', JSON.stringify(updatedReviews))
+  // Hapus ulasan: hanya admin yang sudah login yang diizinkan database
+  const handleDeleteReview = async (id: number) => {
+    if (!confirm('Hapus ulasan ini?')) return
+
+    const { error } = await supabase.from('reviews').delete().eq('id', id)
+    if (error) {
+      alert('Gagal menghapus ulasan.')
+      return
     }
+    setReviews(reviews.filter((rev) => rev.id !== id))
   }
 
   return (
@@ -186,7 +236,11 @@ function ProductsContent() {
                 Daftar Produk ({filteredProducts.length})
               </h3>
 
-              {filteredProducts.length === 0 ? (
+              {loadingProducts ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-16 text-center">
+                  <p className="text-xs font-bold text-gray-500">Memuat produk...</p>
+                </div>
+              ) : filteredProducts.length === 0 ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-2xl p-16 text-center space-y-3">
                   <span className="text-4xl">📦</span>
                   <h4 className="font-bold text-black text-sm">Belum ada produk untuk kategori "{categoryParam}".</h4>
@@ -204,11 +258,13 @@ function ProductsContent() {
                         <span className="absolute top-3 left-3 bg-black text-white text-[10px] font-bold px-3 py-1 rounded-full z-10 uppercase">
                           {prod.category}
                         </span>
-                        <img
-                          src={prod.image}
-                          alt={prod.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                        />
+                        {prod.image && (
+                          <img
+                            src={prod.image}
+                            alt={prod.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                          />
+                        )}
                       </div>
 
                       <div className="p-5 flex flex-col flex-1 justify-between space-y-4">
@@ -238,15 +294,17 @@ function ProductsContent() {
               )}
             </div>
 
-            {/* BAGIAN ULASAN PERMANEN + HAPUS KHUSUS ADMIN */}
+            {/* BAGIAN ULASAN */}
             <div className="bg-white border border-gray-200 rounded-3xl p-6 md:p-8 space-y-6 shadow-sm mt-12">
               <div className="flex justify-between items-center border-b pb-3">
                 <h3 className="text-sm font-black uppercase tracking-wider text-black">
                   Ulasan Pelanggan ({reviews.length})
                 </h3>
-                <span className="text-[10px] bg-gray-100 text-gray-600 font-bold px-2.5 py-1 rounded-lg">
-                  🔒 Hapus ulasan khusus Mode Admin
-                </span>
+                {isAdmin && (
+                  <span className="text-[10px] bg-gray-100 text-gray-600 font-bold px-2.5 py-1 rounded-lg">
+                    🔒 Mode Admin aktif
+                  </span>
+                )}
               </div>
 
               {/* List Testimoni */}
@@ -262,14 +320,16 @@ function ProductsContent() {
                       <p className="text-xs text-gray-700 font-medium">{rev.comment}</p>
                     </div>
 
-                    {/* Tombol Hapus Khusus Admin */}
-                    <button
-                      onClick={() => handleDeleteReview(rev.id)}
-                      className="text-red-500 hover:text-red-700 text-xs font-bold px-2.5 py-1 rounded-lg hover:bg-red-50 transition flex-shrink-0"
-                      title="Hapus ulasan (Mode Admin)"
-                    >
-                      🗑️ Hapus
-                    </button>
+                    {/* Tombol Hapus: hanya tampil untuk admin yang sudah login */}
+                    {isAdmin && (
+                      <button
+                        onClick={() => handleDeleteReview(rev.id)}
+                        className="text-red-500 hover:text-red-700 text-xs font-bold px-2.5 py-1 rounded-lg hover:bg-red-50 transition flex-shrink-0 cursor-pointer"
+                        title="Hapus ulasan"
+                      >
+                        🗑️ Hapus
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -282,6 +342,7 @@ function ProductsContent() {
                   placeholder="Nama Anda"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
+                  maxLength={60}
                   className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 text-xs font-bold text-black focus:outline-none placeholder:text-gray-400"
                   required
                 />
@@ -290,6 +351,7 @@ function ProductsContent() {
                   placeholder="Bagaimana pengalaman Anda berbelanja di DSCPL WEAR?"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
+                  maxLength={500}
                   className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 text-xs font-bold text-black focus:outline-none placeholder:text-gray-400"
                   required
                 ></textarea>

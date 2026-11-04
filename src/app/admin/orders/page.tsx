@@ -1,23 +1,47 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+
+type Order = {
+  id: number
+  customer_name: string
+  phone: string
+  address: string
+  items: string
+  total_price: string | null
+  status: string
+  created_at: string
+}
+
+type Product = {
+  id: number
+  title: string
+  category: string
+  price: string
+  original_price: string | null
+  image: string | null
+}
 
 export default function AdminDashboardPage() {
+  const router = useRouter()
+  const [authed, setAuthed] = useState(false)
   const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'settings'>('orders')
-  
-  // State Pesanan
-  const [orders, setOrders] = useState<any[]>([])
 
-  // State Produk Katalog (+ Input Harga Asli / Coret)
-  const [products, setProducts] = useState<any[]>([])
+  // State Pesanan
+  const [orders, setOrders] = useState<Order[]>([])
+
+  // State Produk Katalog
+  const [products, setProducts] = useState<Product[]>([])
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
   const [newOriginalPrice, setNewOriginalPrice] = useState('')
   const [newCategory, setNewCategory] = useState('Custom Kaos')
   const [newImage, setNewImage] = useState('')
 
-  // State CMS Pengaturan Website
+  // State Pengaturan Website
   const [siteText, setSiteText] = useState({
     heroTitle: 'Precision Apparel & Custom Print Workshop',
     heroDesc: 'Pusat layanan custom apparel, sablon DTF berkualitas tinggi, dan penyediaan polosan standar distro di Depok.',
@@ -25,93 +49,113 @@ export default function AdminDashboardPage() {
   })
 
   useEffect(() => {
-    const loadOrders = () => {
-      const saved = localStorage.getItem('dscpl_orders')
-      if (saved) { try { setOrders(JSON.parse(saved)) } catch (e) { setOrders([]) } }
-    }
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        router.replace('/admin/login')
+        return
+      }
+      setAuthed(true)
 
-    const loadProducts = () => {
-      const saved = localStorage.getItem('dscpl_store_products')
-      if (saved) { 
-        try { setProducts(JSON.parse(saved)) } catch (e) { setProducts([]) } 
-      } else {
-        const defaultProds = [
-          { id: 1, title: 'Custom Topi Snapback Modern', price: 'Rp 69.127', originalPrice: 'Rp 85.000', category: 'Custom Topi', image: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?auto=format&fit=crop&q=80&w=500' },
-          { id: 2, title: 'Custom Kaos Lengan Pendek Oversized', price: 'Rp 90.000', originalPrice: 'Rp 180.000', category: 'Custom Kaos', image: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=500' }
-        ]
-        setProducts(defaultProds)
-        localStorage.setItem('dscpl_store_products', JSON.stringify(defaultProds))
+      const [ordersRes, productsRes, settingsRes] = await Promise.all([
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('products').select('*').order('created_at', { ascending: false }),
+        supabase.from('site_settings').select('data').eq('id', 1).maybeSingle()
+      ])
+
+      if (ordersRes.data) setOrders(ordersRes.data as Order[])
+      if (productsRes.data) setProducts(productsRes.data as Product[])
+      if (settingsRes.data?.data) {
+        setSiteText((prev) => ({ ...prev, ...(settingsRes.data!.data as any) }))
       }
     }
 
-    const loadSettings = () => {
-      const saved = localStorage.getItem('dscpl_site_texts')
-      if (saved) { try { setSiteText(prev => ({ ...prev, ...JSON.parse(saved) })) } catch (e) {} }
-    }
+    init()
+  }, [router])
 
-    loadOrders()
-    loadProducts()
-    loadSettings()
-
-    window.addEventListener('storage', loadOrders)
-    return () => window.removeEventListener('storage', loadOrders)
-  }, [])
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.replace('/admin/login')
+  }
 
   // Handler Pesanan
-  const handleUpdateStatus = (id: number, newStatus: string) => {
-    const updated = orders.map(ord => ord.id === id ? { ...ord, status: newStatus } : ord)
-    setOrders(updated)
-    localStorage.setItem('dscpl_orders', JSON.stringify(updated))
-  }
-
-  const handleDeleteOrder = (id: number) => {
-    if (confirm('Hapus pesanan ini?')) {
-      const updated = orders.filter(ord => ord.id !== id)
-      setOrders(updated)
-      localStorage.setItem('dscpl_orders', JSON.stringify(updated))
+  const handleUpdateStatus = async (id: number, newStatus: string) => {
+    const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', id)
+    if (error) {
+      alert('Gagal memperbarui status pesanan.')
+      return
     }
+    setOrders(orders.map((ord) => (ord.id === id ? { ...ord, status: newStatus } : ord)))
   }
 
-  // Handler Tambah Produk (Termasuk Harga Coret)
-  const handleAddProduct = (e: React.FormEvent) => {
+  const handleDeleteOrder = async (id: number) => {
+    if (!confirm('Hapus pesanan ini?')) return
+    const { error } = await supabase.from('orders').delete().eq('id', id)
+    if (error) {
+      alert('Gagal menghapus pesanan.')
+      return
+    }
+    setOrders(orders.filter((ord) => ord.id !== id))
+  }
+
+  // Handler Produk
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTitle || !newPrice) return
 
-    const newProd = {
-      id: Date.now(),
-      title: newTitle,
-      price: newPrice,
-      originalPrice: newOriginalPrice || 'Rp 150.000',
-      category: newCategory,
-      image: newImage || 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=500'
+    const { data, error } = await supabase
+      .from('products')
+      .insert({
+        title: newTitle,
+        price: newPrice,
+        original_price: newOriginalPrice || null,
+        category: newCategory,
+        image:
+          newImage ||
+          'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=500'
+      })
+      .select()
+      .single()
+
+    if (error || !data) {
+      alert('Gagal menambahkan produk.')
+      return
     }
 
-    const updated = [newProd, ...products]
-    setProducts(updated)
-    localStorage.setItem('dscpl_store_products', JSON.stringify(updated))
-    window.dispatchEvent(new Event('dscpl_products_updated'))
-
+    setProducts([data as Product, ...products])
     setNewTitle('')
     setNewPrice('')
     setNewOriginalPrice('')
     setNewImage('')
-    alert('Produk baru dengan harga coret berhasil ditambahkan ke katalog!')
+    alert('Produk baru berhasil ditambahkan ke katalog!')
   }
 
-  const handleDeleteProduct = (id: number) => {
-    if (confirm('Hapus produk ini dari katalog?')) {
-      const updated = products.filter(p => p.id !== id)
-      setProducts(updated)
-      localStorage.setItem('dscpl_store_products', JSON.stringify(updated))
-      window.dispatchEvent(new Event('dscpl_products_updated'))
+  const handleDeleteProduct = async (id: number) => {
+    if (!confirm('Hapus produk ini dari katalog?')) return
+    const { error } = await supabase.from('products').delete().eq('id', id)
+    if (error) {
+      alert('Gagal menghapus produk.')
+      return
     }
+    setProducts(products.filter((p) => p.id !== id))
   }
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault()
-    localStorage.setItem('dscpl_site_texts', JSON.stringify(siteText))
-    window.dispatchEvent(new Event('dscpl_text_updated'))
+    const { error } = await supabase.from('site_settings').upsert({ id: 1, data: siteText })
+    if (error) {
+      alert('Gagal menyimpan pengaturan website.')
+      return
+    }
     alert('Pengaturan website berhasil diperbarui!')
+  }
+
+  if (!authed) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center text-xs font-bold text-black">
+        Memeriksa akses admin...
+      </div>
+    )
   }
 
   return (
@@ -130,11 +174,17 @@ export default function AdminDashboardPage() {
             <Link href="/products" className="bg-white text-black text-xs font-bold px-4 py-2.5 rounded-xl transition hover:bg-gray-100">
               Lihat Website Toko ➔
             </Link>
+            <button
+              onClick={handleLogout}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer"
+            >
+              Keluar
+            </button>
           </div>
         </div>
 
         {/* Tab Navigasi Admin */}
-        <div className="flex gap-3 border-b border-gray-200 pb-3">
+        <div className="flex flex-wrap gap-3 border-b border-gray-200 pb-3">
           <button
             onClick={() => setActiveTab('orders')}
             className={`px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
@@ -161,7 +211,7 @@ export default function AdminDashboardPage() {
           </button>
         </div>
 
-        {/* KONTEN TAB 1: MANAJEMEN PESANAN */}
+        {/* TAB 1: MANAJEMEN PESANAN */}
         {activeTab === 'orders' && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">
@@ -191,15 +241,17 @@ export default function AdminDashboardPage() {
                       <tr key={ord.id} className="hover:bg-gray-50">
                         <td className="p-3 font-mono text-gray-500">
                           #{ord.id}
-                          <span className="block text-[10px] text-gray-400">{new Date(ord.createdAt).toLocaleString()}</span>
+                          <span className="block text-[10px] text-gray-400">
+                            {new Date(ord.created_at).toLocaleString('id-ID')}
+                          </span>
                         </td>
                         <td className="p-3">
-                          <p className="font-bold text-black">{ord.customerName}</p>
+                          <p className="font-bold text-black">{ord.customer_name}</p>
                           <p className="text-[11px] text-gray-500">{ord.phone}</p>
                           <p className="text-[10px] text-gray-400">{ord.address}</p>
                         </td>
                         <td className="p-3 font-medium text-gray-800 max-w-xs">{ord.items}</td>
-                        <td className="p-3 font-black text-red-600">{ord.totalPrice}</td>
+                        <td className="p-3 font-black text-red-600">{ord.total_price}</td>
                         <td className="p-3">
                           <select
                             value={ord.status}
@@ -208,10 +260,17 @@ export default function AdminDashboardPage() {
                           >
                             <option value="Pending">Pending</option>
                             <option value="Diproses">Diproses</option>
+                            <option value="Dikirim">Dikirim</option>
                             <option value="Selesai">Selesai</option>
                           </select>
                         </td>
-                        <td className="p-3 text-center">
+                        <td className="p-3 text-center space-x-2 whitespace-nowrap">
+                          <Link
+                            href={`/admin/orders/${ord.id}`}
+                            className="bg-gray-100 hover:bg-gray-200 text-black font-bold px-3 py-1.5 rounded-xl transition inline-block"
+                          >
+                            Detail
+                          </Link>
                           <button
                             onClick={() => handleDeleteOrder(ord.id)}
                             className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
@@ -228,7 +287,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* KONTEN TAB 2: TAMBAH & KELOLA KATALOG (DENGAN INPUT HARGA CORET) */}
+        {/* TAB 2: TAMBAH & KELOLA KATALOG */}
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             
@@ -321,12 +380,16 @@ export default function AdminDashboardPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
                 {products.map((p) => (
                   <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border flex items-center justify-between gap-3">
-                    <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white" />
+                    {p.image && (
+                      <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-red-600 font-black">{p.price}</span>
-                        {p.originalPrice && <span className="text-[10px] text-gray-400 line-through">{p.originalPrice}</span>}
+                        {p.original_price && (
+                          <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>
+                        )}
                       </div>
                       <span className="text-[10px] bg-black text-white px-2 py-0.5 rounded-full">{p.category}</span>
                     </div>
@@ -344,7 +407,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* KONTEN TAB 3: PENGATURAN PROMO & TEKS WEBSITE */}
+        {/* TAB 3: PENGATURAN PROMO & TEKS WEBSITE */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-6 max-w-2xl">
             <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">
