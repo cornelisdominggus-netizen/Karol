@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 
-export default function ProductDetailPage() {
+function ProductDetail() {
   const params = useParams()
   const productId = (params?.id as string) || 'kaos'
 
@@ -270,5 +270,13 @@ export default function ProductDetailPage() {
         </div>
       </div>
     </main>
+  )
+}
+
+export default function ProductDetailPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white text-black flex items-center justify-center">Memuat produk...</div>}>
+      <ProductDetail />
+    </Suspense>
   )
 }
