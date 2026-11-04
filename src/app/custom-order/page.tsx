@@ -1,15 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
-export default function CustomOrderPage() {
+function CustomOrderContent() {
   const searchParams = useSearchParams()
   const typeParam = searchParams.get('type') || 'kaos'
   const [sortBy, setSortBy] = useState('latest')
 
-  // Data Produk Lengkap dengan ID agar bisa diklik menuju halaman detail
   const topiProducts = [
     { id: 'topi-trucker', title: 'Custom Topi Trucker Jaring', originalPrice: 'Rp 49.876', promoPrice: 'Rp 24.689', discount: '-50%', rating: 5, reviews: 12 },
     { id: 'topi-snapback-klasik', title: 'Custom Topi Snapback Klasik', originalPrice: 'Rp 69.825', promoPrice: 'Rp 35.000', discount: '-50%', rating: 5, reviews: 12 },
@@ -69,15 +68,11 @@ export default function CustomOrderPage() {
   return (
     <main className="min-h-screen bg-white text-black py-8 px-4">
       <div className="max-w-7xl mx-auto">
-        
-        {/* Breadcrumb */}
         <div className="text-xs font-semibold text-gray-500 mb-6 uppercase tracking-wider">
           <Link href="/" className="hover:text-black">Beranda</Link> / <span className="text-gray-400">Produk Custom</span> / <span className="text-black font-bold uppercase">{typeParam}</span>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          
-          {/* SIDEBAR KIRI */}
           <aside className="hidden lg:block lg:col-span-1 space-y-6">
             <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200 shadow-sm">
               <h3 className="font-black text-black text-sm uppercase tracking-wider mb-4 pb-2 border-b border-gray-200">
@@ -101,9 +96,7 @@ export default function CustomOrderPage() {
             </div>
           </aside>
 
-          {/* KONTEN UTAMA KANAN */}
           <div className="lg:col-span-3">
-            
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-200 pb-4 mb-6 gap-4">
               <h1 className="text-2xl font-black text-black uppercase tracking-tight">{categoryTitle}</h1>
               
@@ -121,7 +114,6 @@ export default function CustomOrderPage() {
               </div>
             </div>
 
-            {/* Grid Kartu Produk (Terhubung ke Detail Produk) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
               {displayedProducts.map((item: any) => (
                 <div 
@@ -129,7 +121,6 @@ export default function CustomOrderPage() {
                   className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex flex-col justify-between hover:border-black transition group"
                 >
                   <div>
-                    {/* Link Gambar ke Detail Produk */}
                     <Link href={`/products/${item.id}`} className="block">
                       <div className="w-full h-48 bg-gray-100 rounded-xl mb-4 flex items-center justify-center relative overflow-hidden border border-gray-200 group-hover:bg-gray-200 transition">
                         <span className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded shadow">
@@ -149,7 +140,6 @@ export default function CustomOrderPage() {
                       </h3>
                     </Link>
 
-                    {/* Rating Bintang */}
                     <div className="flex items-center gap-1 mt-2">
                       <span className="text-yellow-500 text-xs">★★★★★</span>
                       <span className="text-[11px] text-gray-500 font-medium">({item.reviews})</span>
@@ -173,9 +163,16 @@ export default function CustomOrderPage() {
             </div>
 
           </div>
-
         </div>
       </div>
     </main>
+  )
+}
+
+export default function CustomOrderPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white text-black flex items-center justify-center text-xs font-bold">Memuat produk custom...</div>}>
+      <CustomOrderContent />
+    </Suspense>
   )
 }
