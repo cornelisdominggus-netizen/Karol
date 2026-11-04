@@ -1,69 +1,132 @@
-import Image from "next/image";
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import EventBanner from '@/components/EventBanner'
 
 export default function Home() {
+  const [siteText, setSiteText] = useState({
+    heroTitle: 'Precision Apparel & Custom Print Workshop',
+    heroDesc: 'Pusat layanan custom apparel, sablon DTF berkualitas tinggi, dan penyediaan polosan standar distro di Depok. Tampil presisi dan berdisiplin tinggi bersama DSCPL WEAR.',
+    sectionTitle: 'Kategori Utama DSCPL WEAR',
+    promoAnnouncement: 'Event 99% : Selengkapnya',
+    footerText: '© 2026 DSCPL WEAR. Pusat Custom Apparel & Sablon DTF Depok.'
+  })
+
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false)
+
+  useEffect(() => {
+    const loadData = () => {
+      // Cek status login admin
+      const adminStatus = localStorage.getItem('dscpl_is_admin')
+      setIsAdminLoggedIn(adminStatus === 'true')
+
+      // Load Teks CMS
+      const savedTexts = localStorage.getItem('dscpl_site_texts')
+      if (savedTexts) {
+        try {
+          const parsed = JSON.parse(savedTexts)
+          setSiteText(prev => ({ ...prev, ...parsed }))
+        } catch (e) {}
+      }
+    }
+
+    loadData()
+
+    window.addEventListener('storage', loadData)
+    window.addEventListener('dscpl_text_updated', loadData)
+    window.addEventListener('dscpl_auth_updated', loadData)
+
+    return () => {
+      window.removeEventListener('storage', loadData)
+      window.removeEventListener('dscpl_text_updated', loadData)
+      window.removeEventListener('dscpl_auth_updated', loadData)
+    }
+  }, [])
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen bg-white text-black">
+      
+      {/* Event Banner Berjalan & Hitung Mundur */}
+      <EventBanner />
+
+      <div className="max-w-7xl mx-auto py-12 px-4 space-y-12">
+        
+        {/* Hero Section */}
+        <div className="bg-gray-50 border border-gray-200 rounded-3xl p-8 md:p-12 shadow-sm flex flex-col md:flex-row items-center justify-between gap-8">
+          <div className="max-w-xl space-y-4">
+            <span className="bg-black text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+              Official DSCPL WEAR Platform
+            </span>
+            <h1 className="text-4xl md:text-5xl font-black tracking-tight text-black">
+              {siteText.heroTitle}
+            </h1>
+            <p className="text-gray-800 text-sm md:text-base font-semibold leading-relaxed">
+              {siteText.heroDesc}
+            </p>
+            <div className="flex flex-wrap gap-3 pt-2">
+              <Link
+                href="/products"
+                className="bg-black hover:bg-gray-800 text-white font-bold px-6 py-3 rounded-xl text-xs transition shadow-sm uppercase cursor-pointer inline-block"
+              >
+                Lihat Semua Katalog 👕
+              </Link>
+
+              {/* Tombol Admin di Beranda HANYA MUNCUL jika akun admin sudah login */}
+              {isAdminLoggedIn && (
+                <Link
+                  href="/admin/orders"
+                  className="bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-3 rounded-xl text-xs transition shadow uppercase cursor-pointer inline-block"
+                >
+                  ⚙️ Panel Super Admin Aktif
+                </Link>
+              )}
+            </div>
+          </div>
+
+          <div className="w-full md:w-96 h-64 bg-gray-200 rounded-2xl flex items-center justify-center border border-gray-300 text-center p-6 shadow-inner">
+            <div>
+              <span className="text-4xl block mb-2">⚡</span>
+              <span className="text-xs font-black uppercase tracking-widest text-gray-800">DSCPL WEAR WORKSHOP</span>
+              <p className="text-[11px] text-gray-700 font-bold mt-1">Depok, West Java, Indonesia</p>
+              <span className="inline-block mt-3 bg-white text-black text-[10px] font-bold px-2.5 py-1 rounded-md shadow">
+                {siteText.promoAnnouncement}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        {/* Quick Category Grid */}
+        <div className="space-y-6">
+          <h2 className="text-xl font-black uppercase tracking-wider pb-2 border-b border-gray-200">
+            {siteText.sectionTitle}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+            {[
+              { title: 'Custom Kaos', type: 'Custom Kaos', icon: '👕' },
+              { title: 'Custom Hoodie', type: 'Custom Hoodie', icon: '🧥' },
+              { title: 'Custom Topi', type: 'Custom Topi', icon: '🧢' },
+              { title: 'Custom Tas', type: 'Custom Tas', icon: '👜' },
+              { title: 'Merchandise', type: 'Merchandise', icon: '🎁' }
+            ].map((cat, idx) => (
+              <Link
+                key={idx}
+                href="/products"
+                className="bg-gray-50 hover:bg-black hover:text-white transition border border-gray-200 rounded-2xl p-6 text-center group shadow-sm flex flex-col items-center justify-center cursor-pointer"
+              >
+                <span className="text-3xl mb-2">{cat.icon}</span>
+                <h3 className="font-bold text-xs uppercase">{cat.title}</h3>
+              </Link>
+            ))}
+          </div>
         </div>
-      </main>
-    </div>
-  );
+
+        {/* Footer */}
+        <footer className="pt-8 border-t border-gray-200 text-center text-xs text-gray-600 font-semibold">
+          {siteText.footerText}
+        </footer>
+
+      </div>
+    </main>
+  )
 }
