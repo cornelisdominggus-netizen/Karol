@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import SizeChartModal from '@/components/SizeChartModal'
 
-export default function ProductDetailPage() {
+function ProductDetail() {
   const params = useParams()
   const router = useRouter()
   const productId = params?.id
@@ -178,5 +178,19 @@ export default function ProductDetailPage() {
       {/* Render SizeChartModal */}
       <SizeChartModal isOpen={isSizeChartOpen} onClose={() => setIsSizeChartOpen(false)} />
     </main>
+  )
+}
+
+export default function ProductDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-white text-black py-20 px-4 text-center">
+          <h1 className="text-sm font-bold">Memuat Detail Produk...</h1>
+        </main>
+      }
+    >
+      <ProductDetail />
+    </Suspense>
   )
 }
