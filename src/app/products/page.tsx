@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 
-export default function ProductsPage() {
+function ProductsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const categoryParam = searchParams.get('category') || 'Semua Katalog'
@@ -256,7 +256,7 @@ export default function ProductsPage() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-black text-xs text-black">{rev.name}</span>
-                        <span className="text-[10px] text-gray-400">• {rev.date}</span>
+                        <span className="text-[10px] text-gray-400">{rev.date}</span>
                       </div>
                       <div className="text-yellow-500 text-xs">★★★★★</div>
                       <p className="text-xs text-gray-700 font-medium">{rev.comment}</p>
@@ -308,5 +308,13 @@ export default function ProductsPage() {
 
       </div>
     </main>
+  )
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-white text-black flex items-center justify-center text-xs font-bold">Memuat halaman produk...</div>}>
+      <ProductsContent />
+    </Suspense>
   )
 }
