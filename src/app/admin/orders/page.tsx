@@ -71,6 +71,30 @@ export default function AdminDashboardPage() {
     }
 
     init()
+
+    // REAL-TIME LISTENER UNTUK ADMIN
+    const ordersChannel = supabase
+      .channel('admin-orders-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload: any) => {
+          if (payload.eventType === 'INSERT') {
+            setOrders((prev) => [payload.new as Order, ...prev])
+          } else if (payload.eventType === 'UPDATE') {
+            setOrders((prev) =>
+              prev.map((ord) => (ord.id === payload.new.id ? (payload.new as Order) : ord))
+            )
+          } else if (payload.eventType === 'DELETE') {
+            setOrders((prev) => prev.filter((ord) => ord.id !== payload.old.id))
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(ordersChannel)
+    }
   }, [router])
 
   const handleLogout = async () => {
@@ -215,7 +239,7 @@ export default function AdminDashboardPage() {
         {activeTab === 'orders' && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">
-              Daftar Pesanan Masuk Pelanggan (Supabase Database)
+              Daftar Pesanan Masuk Pelanggan (Supabase Database Real-Time)
             </h2>
 
             {orders.length === 0 ? (
@@ -237,43 +261,80 @@ export default function AdminDashboardPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {orders.map((ord) => (
-                      <tr key={ord.id} className="hover:bg-gray-50">
-                        <td className="p-3 font-mono text-gray-500">
-                          #{ord.id}
-                          <span className="block text-[10px] text-gray-400">
-                            {new Date(ord.created_at).toLocaleString('id-ID')}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <p className="font-bold text-black">{ord.customer_name}</p>
-                          <p className="text-[11px] text-gray-500">{ord.phone}</p>
-                          <p className="text-[10px] text-gray-400">{ord.address}</p>
-                        </td>
-                        <td className="p-3 font-medium text-gray-800 max-w-xs">{ord.items}</td>
-                        <td className="p-3 font-black text-red-600">{ord.total_price}</td>
-                        <td className="p-3">
-                          <select
-                            value={ord.status}
-                            onChange={(e) => handleUpdateStatus(ord.id, e.target.value)}
-                            className="font-bold px-3 py-1.5 rounded-xl border text-xs focus:outline-none bg-yellow-50 text-yellow-700 border-yellow-200"
-                          >
-                            <option value="Pending">Pending</option>
-                            <option value="Diproses">Diproses</option>
-                            <option value="Dikirim">Dikirim</option>
-                            <option value="Selesai">Selesai</option>
-                          </select>
-                        </td>
-                        <td className="p-3 text-center space-x-2 whitespace-nowrap">
-                          <button
-                            onClick={() => handleDeleteOrder(ord.id)}
-                            className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
-                          >
-                            Hapus
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {orders.map((ord) => {
+                      const textParts = ord.items ? ord.items.split('| File Desain:') : [ord.items]
+                      const itemDetail = textParts[0]
+                      const fileUrl = textParts[1] ? textParts[1].trim() : null
+
+                      return (
+                        <tr key={ord.id} className="hover:bg-gray-50">
+                          <td className="p-3 font-mono text-gray-500">
+                            #{ord.id}
+                            <span className="block text-[10px] text-gray-400">
+                              {new Date(ord.created_at).toLocaleString('id-ID')}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <p className="font-bold text-black">{ord.customer_name}</p>
+                            <p className="text-[11px] text-gray-500">{ord.phone}</p>
+                            <p className="text-[10px] text-gray-400">{ord.address}</p>
+                          </td>
+                          
+                          <td className="p-3 font-medium text-gray-800 max-w-xs">
+                            <div className="space-y-2">
+                              <p className="font-semibold text-black">{itemDetail}</p>
+                              
+                              {fileUrl && fileUrl !== 'Tanpa file' && (
+                                <div className="pt-1">
+                                  {/\.(png|jpg|jpeg|webp)$/i.test(fileUrl) ? (
+                                    <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="block group">
+                                      <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 p-2 rounded-xl hover:bg-gray-100 transition">
+                                        <img src={fileUrl} alt="Preview Desain" className="w-10 h-10 object-cover rounded-lg border bg-white flex-shrink-0" />
+                                        <div className="overflow-hidden">
+                                          <p className="text-[10px] font-bold text-blue-600 truncate group-hover:underline">🔍 Klik lihat gambar penuh</p>
+                                          <p className="text-[9px] text-gray-400 uppercase">Preview Gambar Desain</p>
+                                        </div>
+                                      </div>
+                                    </a>
+                                  ) : (
+                                    <a 
+                                      href={fileUrl} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1.5 bg-black text-white px-3 py-1.5 rounded-xl text-[10px] font-black hover:bg-gray-800 transition shadow-sm"
+                                    >
+                                      <span>📄 Buka / Unduh Berkas Desain</span>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="p-3 font-black text-red-600">{ord.total_price}</td>
+                          <td className="p-3">
+                            <select
+                              value={ord.status}
+                              onChange={(e) => handleUpdateStatus(ord.id, e.target.value)}
+                              className="font-bold px-3 py-1.5 rounded-xl border text-xs focus:outline-none bg-yellow-50 text-yellow-700 border-yellow-200"
+                            >
+                              <option value="Pending">Pending</option>
+                              <option value="Diproses">Diproses</option>
+                              <option value="Dikirim">Dikirim</option>
+                              <option value="Selesai">Selesai</option>
+                            </select>
+                          </td>
+                          <td className="p-3 text-center space-x-2 whitespace-nowrap">
+                            <button
+                              onClick={() => handleDeleteOrder(ord.id)}
+                              className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
+                            >
+                              Hapus
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
