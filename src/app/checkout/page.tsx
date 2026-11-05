@@ -9,13 +9,14 @@ export default function CheckoutPage() {
   const router = useRouter()
   const [cart, setCart] = useState<any[]>([])
   
-  // Form Tagihan
+  // Form Tagihan & File Desain
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [province, setProvince] = useState('Jawa Barat')
   const [city, setCity] = useState('Depok')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
+  const [designFile, setDesignFile] = useState<File | null>(null) // State untuk file desain
   const [agree, setAgree] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -72,55 +73,75 @@ export default function CheckoutPage() {
 
     setLoading(true)
 
-    // Rangkuman item pesanan
-    const itemsSummary = cart.map(i => `${i.title} (${i.size}) x${i.quantity} [File: ${i.designFile || 'Tanpa file'}]`).join(', ')
-    const totalPriceStr = 'Rp ' + totalNum.toLocaleString('id-ID')
-
     try {
-      // Simpan langsung ke database Supabase tabel 'orders'
-      const { data, error } = await supabase
+      let filePublicUrl = 'Tanpa file'
+
+      // Jika pembeli melampirkan file, upload ke Supabase Storage bucket 'designs'
+      if (designFile) {
+        const fileExt = designFile.name.split('.').pop()
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
+        
+        const { error: uploadError } = await supabase.storage
+          .from('designs') // Menggunakan bucket 'designs' yang ada di Supabase kamu
+          .upload(fileName, designFile)
+
+        if (uploadError) {
+          console.error('Supabase Storage Error:', uploadError.message)
+          alert('Gagal mengunggah file desain: ' + uploadError.message)
+          setLoading(false)
+          return
+        }
+
+        // Ambil URL publik file
+        const { data: publicURLData } = supabase.storage
+          .from('designs')
+          .getPublicUrl(fileName)
+
+        filePublicUrl = publicURLData.publicUrl
+      }
+
+      // Rangkuman item pesanan
+      const itemsSummary = cart.map(i => `${i.title} (${i.size}) x${i.quantity}`).join(', ')
+      const totalPriceStr = 'Rp ' + totalNum.toLocaleString('id-ID')
+
+      // Simpan data pesanan ke database Supabase tabel 'orders'
+      const { error } = await supabase
         .from('orders')
         .insert([
           {
             customer_name: name || 'Pelanggan DSCPL',
             phone: phone || '-',
             address: `${address}, ${city}, ${province}`,
-            items: itemsSummary,
+            items: `${itemsSummary} | File Desain: ${filePublicUrl}`,
             total_price: totalPriceStr,
             status: 'Pending'
           }
         ])
-        .select()
 
       if (error) {
-        console.error('Supabase Insert Error Detail:', error)
-        alert('Gagal menyimpan ke database Supabase: ' + error.message)
+        console.error('Supabase Insert Error:', error)
+        alert('Gagal menyimpan pesanan ke database.')
         setLoading(false)
         return
       }
 
-      console.log('Berhasil masuk database:', data)
-
-      // Kosongkan keranjang lokal setelah berhasil
+      // Kosongkan keranjang setelah berhasil
       localStorage.removeItem('dscpl_cart')
       setCart([])
       window.dispatchEvent(new Event('dscpl_cart_updated'))
 
-      // Format pesan otomatis ke WhatsApp Admin
+      // Format pesan WhatsApp Admin dengan menyertakan link file desain
       const adminWhatsAppNumber = '6285697211657' 
-      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A*Total Pembayaran*: ${totalPriceStr}%0A%0A*Catatan*: File desain/mockup akan saya kirimkan melalui chat ini ya Kak.`
+      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A*Link File Desain*: ${filePublicUrl}%0A*Total Pembayaran*: ${totalPriceStr}`
 
-      // Buka WhatsApp otomatis di tab baru
       window.open(`https://wa.me/${adminWhatsAppNumber}?text=${waMessage}`, '_blank')
 
-      alert('Pesanan berhasil dibuat & tercatat otomatis di Supabase! Terima kasih telah berbelanja.')
-      
-      // DIARAHKAN KEMBALI KE BERANDA (BUKAN KE HALAMAN ADMIN)
+      alert('Pesanan & file desain berhasil dibuat!')
       router.replace('/')
 
     } catch (err: any) {
-      console.error('Catch Error:', err)
-      alert('Terjadi kesalahan sistem saat mengirim pesanan.')
+      console.error('Error:', err)
+      alert('Terjadi kesalahan sistem saat memproses pesanan.')
     } finally {
       setLoading(false)
     }
@@ -139,10 +160,10 @@ export default function CheckoutPage() {
         {/* 3 Kolom Utama */}
         <form onSubmit={handleCreateOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           
-          {/* KOLOM 1: DETAIL TAGIHAN */}
+          {/* KOLOM 1: DETAIL TAGIHAN & UPLOAD FILE */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <div className="border-b pb-3">
-              <h2 className="text-sm font-black uppercase tracking-wider text-red-600">DETAIL TAGIHAN</h2>
+              <h2 className="text-sm font-black uppercase tracking-wider text-red-600">1. DETAIL TAGIHAN</h2>
             </div>
 
             <div className="space-y-3 text-xs">
@@ -224,6 +245,18 @@ export default function CheckoutPage() {
                   className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black focus:outline-none placeholder:text-gray-400"
                 />
               </div>
+
+              {/* INPUT UPLOAD FILE DESAIN */}
+              <div className="pt-2 border-t space-y-1">
+                <label className="block font-black text-red-600 mb-1">📁 Unggah File Desain / Mockup</label>
+                <input
+                  type="file"
+                  onChange={(e) => setDesignFile(e.target.files?.[0] || null)}
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2 text-xs font-bold text-black file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-black file:bg-black file:text-white hover:file:cursor-pointer"
+                />
+                <p className="text-[10px] text-gray-500 font-medium">Format: PNG, JPEG, PDF (Maks. 10MB)</p>
+              </div>
+
             </div>
           </div>
 
@@ -257,7 +290,6 @@ export default function CheckoutPage() {
                       <div className="min-w-0">
                         <h4 className="font-bold text-black truncate">{item.title}</h4>
                         <p className="text-[10px] text-gray-600 font-semibold">Ukuran: {item.size}</p>
-                        {item.designFile && <p className="text-[9px] text-blue-600 truncate">File: {item.designFile}</p>}
                       </div>
                     </div>
 
@@ -310,9 +342,9 @@ export default function CheckoutPage() {
 
             <div className="space-y-4 text-xs">
               <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 space-y-2">
-                <p className="font-black text-blue-900">💬 Kirim Desain via WhatsApp</p>
+                <p className="font-black text-blue-900">💬 Otomatis Kirim File Desain</p>
                 <p className="text-blue-800 font-medium leading-relaxed">
-                  Setelah menekan tombol buat pesanan, data pesanan otomatis tersimpan di database dan WhatsApp admin akan terbuka agar Anda bisa mengirim file desain.
+                  File desain yang Anda unggah akan otomatis disimpan ke database, dan link unduhannya langsung disertakan ke WhatsApp admin.
                 </p>
               </div>
 
@@ -335,7 +367,7 @@ export default function CheckoutPage() {
                 disabled={loading}
                 className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3.5 rounded-xl uppercase tracking-wider transition shadow-md cursor-pointer text-center text-xs"
               >
-                {loading ? 'MEMPROSES PESANAN...' : 'BUAT PESANAN & KIRIM KE WHATSAPP ➔'}
+                {loading ? 'MENGUNGGAH & MEMPROSES...' : 'BUAT PESANAN & KIRIM KE WHATSAPP ➔'}
               </button>
             </div>
           </div>
