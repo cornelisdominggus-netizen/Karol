@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -16,6 +17,7 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [agree, setAgree] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     const loadCart = () => {
@@ -57,7 +59,7 @@ export default function CheckoutPage() {
   const shippingCost = cart.length > 0 ? 15000 : 0
   const totalNum = subtotalNum + shippingCost
 
-  const handleCreateOrder = (e: React.FormEvent) => {
+  const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     if (cart.length === 0) {
       alert('Keranjang Anda masih kosong!')
@@ -68,39 +70,58 @@ export default function CheckoutPage() {
       return
     }
 
-    // Rangkuman item & file desain untuk disimpan di admin & dikirim ke WhatsApp
+    setLoading(true)
+
+    // Rangkuman item pesanan
     const itemsSummary = cart.map(i => `${i.title} (${i.size}) x${i.quantity} [File: ${i.designFile || 'Tanpa file'}]`).join(', ')
+    const totalPriceStr = 'Rp ' + totalNum.toLocaleString('id-ID')
 
-    const newOrder = {
-      id: Date.now(),
-      customerName: name || 'Pelanggan DSCPL',
-      phone: phone || '-',
-      address: `${address}, ${city}, ${province}`,
-      items: itemsSummary,
-      designFiles: cart.map(i => `${i.title}: ${i.designFile || 'Belum ada'}`).join(' | '),
-      totalPrice: 'Rp ' + totalNum.toLocaleString('id-ID'),
-      status: 'Pending',
-      createdAt: new Date().toISOString()
+    try {
+      // Simpan langsung ke database Supabase tabel 'orders'
+      const { data, error } = await supabase
+        .from('orders')
+        .insert([
+          {
+            customer_name: name || 'Pelanggan DSCPL',
+            phone: phone || '-',
+            address: `${address}, ${city}, ${province}`,
+            items: itemsSummary,
+            total_price: totalPriceStr,
+            status: 'Pending'
+          }
+        ])
+        .select()
+
+      if (error) {
+        console.error('Supabase Insert Error Detail:', error)
+        alert('Gagal menyimpan ke database Supabase: ' + error.message)
+        setLoading(false)
+        return
+      }
+
+      console.log('Berhasil masuk database:', data)
+
+      // Kosongkan keranjang lokal setelah berhasil
+      localStorage.removeItem('dscpl_cart')
+      setCart([])
+      window.dispatchEvent(new Event('dscpl_cart_updated'))
+
+      // Format pesan otomatis ke WhatsApp Admin
+      const adminWhatsAppNumber = '6285697211657' 
+      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A*Total Pembayaran*: ${totalPriceStr}%0A%0A*Catatan*: File desain/mockup akan saya kirimkan melalui chat ini ya Kak.`
+
+      // Buka WhatsApp otomatis di tab baru
+      window.open(`https://wa.me/${adminWhatsAppNumber}?text=${waMessage}`, '_blank')
+
+      alert('Pesanan berhasil dibuat & tercatat otomatis di Supabase!')
+      router.replace('/admin/orders')
+
+    } catch (err: any) {
+      console.error('Catch Error:', err)
+      alert('Terjadi kesalahan sistem saat mengirim pesanan.')
+    } finally {
+      setLoading(false)
     }
-
-    // Simpan ke localStorage Admin Orders
-    const existingOrders = JSON.parse(localStorage.getItem('dscpl_orders') || '[]')
-    localStorage.setItem('dscpl_orders', JSON.stringify([newOrder, ...existingOrders]))
-    
-    // Kosongkan keranjang
-    localStorage.removeItem('dscpl_cart')
-    setCart([])
-    window.dispatchEvent(new Event('dscpl_cart_updated'))
-
-    // Format pesan otomatis ke WhatsApp Admin (Ganti nomor di bawah dengan nomor WhatsApp kamu, misal 62812xxxx)
-    const adminWhatsAppNumber = '6285697211657' 
-    const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A*Total Pembayaran*: Rp ${totalNum.toLocaleString('id-ID')}%0A%0A*Catatan*: File desain akan saya kirimkan melalui chat ini ya Kak.`
-
-    // Buka WhatsApp otomatis
-    window.open(`https://wa.me/${adminWhatsAppNumber}?text=${waMessage}`, '_blank')
-
-    alert('Pesanan berhasil dibuat & tercatat di sistem Admin! Mengarahkan ke WhatsApp untuk pengiriman file desain...')
-    router.replace('/admin/orders')
   }
 
   return (
@@ -116,7 +137,7 @@ export default function CheckoutPage() {
         {/* 3 Kolom Utama */}
         <form onSubmit={handleCreateOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
           
-          {/* KOLOM 1: DETAIL TAGIHAN (FONT DIBUAT JELAS & TEGAS) */}
+          {/* KOLOM 1: DETAIL TAGIHAN */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <div className="border-b pb-3">
               <h2 className="text-sm font-black uppercase tracking-wider text-red-600">1. DETAIL TAGIHAN</h2>
@@ -204,7 +225,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* KOLOM 2: RINGKASAN PESANAN (FONT DIPERJELAS) */}
+          {/* KOLOM 2: RINGKASAN PESANAN */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <div className="border-b pb-3">
               <h2 className="text-sm font-black uppercase tracking-wider text-red-600">2. PESANAN ANDA</h2>
@@ -289,7 +310,7 @@ export default function CheckoutPage() {
               <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 space-y-2">
                 <p className="font-black text-blue-900">💬 Kirim Desain via WhatsApp</p>
                 <p className="text-blue-800 font-medium leading-relaxed">
-                  Setelah menekan tombol buat pesanan, WhatsApp admin akan otomatis terbuka agar Anda bisa langsung mengirimkan file master desain dan bukti pembayaran.
+                  Setelah menekan tombol buat pesanan, data pesanan otomatis tersimpan di database dan WhatsApp admin akan terbuka agar Anda bisa mengirim file desain.
                 </p>
               </div>
 
@@ -309,14 +330,11 @@ export default function CheckoutPage() {
 
               <button
                 type="submit"
+                disabled={loading}
                 className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3.5 rounded-xl uppercase tracking-wider transition shadow-md cursor-pointer text-center text-xs"
               >
-                BUAT PESANAN & KIRIM KE WHATSAPP ➔
+                {loading ? 'MEMPROSES PESANAN...' : 'BUAT PESANAN & KIRIM KE WHATSAPP ➔'}
               </button>
-
-              <div className="text-center pt-2">
-                <span className="text-gray-600 font-bold text-[11px]">Info subsidi ongkir (Event 99%): <span className="text-black font-black underline cursor-pointer">Klik di Sini</span></span>
-              </div>
             </div>
           </div>
 
