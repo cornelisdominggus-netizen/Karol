@@ -113,8 +113,10 @@ export default function CheckoutPage() {
       // Buka WhatsApp otomatis di tab baru
       window.open(`https://wa.me/${adminWhatsAppNumber}?text=${waMessage}`, '_blank')
 
-      alert('Pesanan berhasil dibuat & tercatat otomatis di Supabase!')
-      router.replace('/admin/orders')
+      alert('Pesanan berhasil dibuat & tercatat otomatis di Supabase! Terima kasih telah berbelanja.')
+      
+      // DIARAHKAN KEMBALI KE BERANDA (BUKAN KE HALAMAN ADMIN)
+      router.replace('/')
 
     } catch (err: any) {
       console.error('Catch Error:', err)
@@ -140,7 +142,7 @@ export default function CheckoutPage() {
           {/* KOLOM 1: DETAIL TAGIHAN */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <div className="border-b pb-3">
-              <h2 className="text-sm font-black uppercase tracking-wider text-red-600">1. DETAIL TAGIHAN</h2>
+              <h2 className="text-sm font-black uppercase tracking-wider text-red-600">DETAIL TAGIHAN</h2>
             </div>
 
             <div className="space-y-3 text-xs">
