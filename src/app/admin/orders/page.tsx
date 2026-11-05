@@ -215,7 +215,7 @@ export default function AdminDashboardPage() {
         {activeTab === 'orders' && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">
-              Daftar Pesanan Masuk Pelanggan
+              Daftar Pesanan Masuk Pelanggan (Supabase Database)
             </h2>
 
             {orders.length === 0 ? (
@@ -230,7 +230,7 @@ export default function AdminDashboardPage() {
                     <tr className="border-b bg-gray-50 text-gray-500 uppercase">
                       <th className="p-3">ID / Waktu</th>
                       <th className="p-3">Pelanggan</th>
-                      <th className="p-3">Detail Item</th>
+                      <th className="p-3">Detail Item & File Desain</th>
                       <th className="p-3">Total Harga</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-center">Aksi</th>
@@ -265,12 +265,6 @@ export default function AdminDashboardPage() {
                           </select>
                         </td>
                         <td className="p-3 text-center space-x-2 whitespace-nowrap">
-                          <Link
-                            href={`/admin/orders/${ord.id}`}
-                            className="bg-gray-100 hover:bg-gray-200 text-black font-bold px-3 py-1.5 rounded-xl transition inline-block"
-                          >
-                            Detail
-                          </Link>
                           <button
                             onClick={() => handleDeleteOrder(ord.id)}
                             className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
@@ -291,7 +285,6 @@ export default function AdminDashboardPage() {
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             
-            {/* Form Tambah Produk */}
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
               <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">
                 + Tambah Produk Baru
@@ -371,7 +364,6 @@ export default function AdminDashboardPage() {
               </form>
             </div>
 
-            {/* List Katalog Produk Saat Ini */}
             <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
               <h2 className="text-sm font-black uppercase tracking-wider text-black border-b pb-2">
                 Daftar Katalog Aktif ({products.length})
@@ -407,7 +399,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 3: PENGATURAN PROMO & TEKS WEBSITE */}
+        {/* TAB 3: PENGATURAN PROMO & TEKS */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-6 max-w-2xl">
             <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">
