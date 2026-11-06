@@ -551,7 +551,7 @@ export default function Mockup3D({
       <div className="absolute top-4 left-6 z-10 flex items-center gap-2">
         <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
         <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-          Pacdora 3D Interactive Studio ({apparelType.toUpperCase()})
+          DSCPL WEARS 3D Studio ({apparelType.toUpperCase()})
         </span>
       </div>
 
