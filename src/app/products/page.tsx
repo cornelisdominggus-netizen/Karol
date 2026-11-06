@@ -103,8 +103,6 @@ function ProductsContent() {
 
   const categoriesList = [
     { name: 'Semua Katalog', value: 'Semua Katalog' },
-    { name: 'Download', value: 'Download' },
-    { name: 'Dtf & Tools', value: 'Alat & Bahan DTF' },
     { name: 'Custom Hoodie', value: 'Custom Hoodie' },
     { name: 'Custom Kaos', value: 'Custom Kaos' },
     { name: 'Custom Merchandise', value: 'Custom Merchandise' },
@@ -219,7 +217,7 @@ function ProductsContent() {
                   {categoryParam}
                 </h1>
                 <p className="text-xs text-gray-600 max-w-md">
-                  Pusat custom apparel dan sablon DTF berkualitas tinggi langsung dari workshop kami di Depok.
+                  Pusat custom apparel berkualitas tinggi langsung dari workshop kami di Depok.
                 </p>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm text-center">
@@ -247,7 +245,6 @@ function ProductsContent() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredProducts.map((prod) => {
-                    // Deteksi otomatis tipe apparel untuk 3D Custom Studio
                     let apparelType = 'kaos'
                     const cat = prod.category?.toLowerCase() || ''
                     const title = prod.title?.toLowerCase() || ''
@@ -260,7 +257,7 @@ function ProductsContent() {
                     return (
                       <div
                         key={prod.id}
-                        onClick={() => router.push(`/custom?type=${apparelType}`)}
+                        onClick={() => router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
                         className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between group cursor-pointer"
                       >
                         <div className="relative h-64 bg-gray-100 overflow-hidden">
@@ -289,7 +286,7 @@ function ProductsContent() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                router.push(`/custom?type=${apparelType}`)
+                                router.push(`/custom?type=${apparelType}&id=${prod.id}`)
                               }}
                               className="bg-black text-white text-xs font-bold px-4 py-2 rounded-xl uppercase tracking-wider hover:bg-gray-800 transition cursor-pointer"
                             >

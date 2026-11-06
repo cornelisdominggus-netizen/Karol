@@ -4,6 +4,7 @@ import { Suspense, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { supabase } from '@/lib/supabase'
 
 const Mockup3D = dynamic(() => import('@/components/Mockup3D'), { ssr: false })
 
@@ -28,16 +29,19 @@ function CustomStudio() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Jenis awal bisa dipilih dari beranda, misalnya /custom?type=hoodie
   const typeParam = searchParams.get('type')
+  const productIdParam = searchParams.get('id')
+
   const initialType: ApparelType = APPAREL_TYPES.includes(typeParam as ApparelType)
     ? (typeParam as ApparelType)
     : 'kaos'
 
   const [selectedType, setSelectedType] = useState<ApparelType>(initialType)
   const [selectedColor, setSelectedColor] = useState<string>('#ffffff')
+  
+  const [productTitle, setProductTitle] = useState<string>('Custom Apparel')
+  const [unitPrice, setUnitPrice] = useState<number>(95000)
 
-  // Dua desain terpisah: depan dan belakang
   const [designs, setDesigns] = useState<Record<Side, SideDesign>>({ front: EMPTY_SIDE, back: EMPTY_SIDE })
   const [activeSide, setActiveSide] = useState<Side>('front')
 
@@ -50,24 +54,63 @@ function CustomStudio() {
     back: useRef<HTMLInputElement>(null),
   }
 
+  useEffect(() => {
+    const fetchProductDetails = async () => {
+      if (productIdParam) {
+        const { data, error } = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', productIdParam)
+          .maybeSingle()
+
+        if (data && !error) {
+          setProductTitle(data.title)
+          const parsedPrice = parseInt(data.price.replace(/[^0-9]/g, ''))
+          if (parsedPrice > 0) setUnitPrice(parsedPrice)
+          
+          const lowerTitle = data.title.toLowerCase()
+          if (lowerTitle.includes('oversized')) setSelectedType('oversized')
+          else if (lowerTitle.includes('hoodie')) setSelectedType('hoodie')
+          else if (lowerTitle.includes('topi')) setSelectedType('topi')
+          else if (lowerTitle.includes('kaos') || lowerTitle.includes('custom')) setSelectedType('kaos')
+          return
+        }
+      }
+
+      const defaultPrices: Record<ApparelType, number> = {
+        kaos: 95000,
+        oversized: 120000,
+        hoodie: 220000,
+        topi: 75000,
+      }
+      setUnitPrice(defaultPrices[selectedType])
+    }
+
+    fetchProductDetails()
+  }, [productIdParam, selectedType])
+
   const updateSide = (side: Side, patch: Partial<SideDesign>) => {
     setDesigns((d) => ({ ...d, [side]: { ...d[side], ...patch } }))
   }
 
-  // Sinkronkan state jika parameter URL berubah dari luar
   useEffect(() => {
     if (typeParam && APPAREL_TYPES.includes(typeParam as ApparelType)) {
       setSelectedType(typeParam as ApparelType)
     }
   }, [typeParam])
 
-  // Ganti jenis pakaian: URL ikut berubah
   const handleTypeChange = (type: ApparelType) => {
     setSelectedType(type)
+    const defaultPrices: Record<ApparelType, number> = {
+      kaos: 95000,
+      oversized: 120000,
+      hoodie: 220000,
+      topi: 75000,
+    }
+    if (!productIdParam) setUnitPrice(defaultPrices[type])
     router.replace(`/custom?type=${type}`, { scroll: false })
   }
 
-  // Ganti jenis pakaian = posisi & ukuran kedua desain kembali ke standar (gambar tetap)
   useEffect(() => {
     setDesigns((d) => ({
       front: { ...d.front, scale: 0.8, x: 0, y: 0.1 },
@@ -88,27 +131,36 @@ function CustomStudio() {
           x: 0,
           y: 0.1,
         })
-        setActiveSide(side) // langsung putar ke sisi yang baru diunggah
+        setActiveSide(side)
       }
     }
     reader.readAsDataURL(file)
-    e.target.value = '' // supaya file yang sama bisa dipilih ulang
+    e.target.value = ''
   }
 
   const removeDesign = (side: Side) => {
     setDesigns((d) => ({ ...d, [side]: EMPTY_SIDE }))
   }
 
-  const prices: Record<ApparelType, number> = {
-    kaos: 95000,
-    oversized: 120000,
-    hoodie: 220000,
-    topi: 75000,
+  const totalPrice = unitPrice * quantity
+
+  const handleDownload3DPreview = () => {
+    const canvasElement = document.querySelector('canvas')
+    if (!canvasElement) {
+      alert('Canvas 3D belum siap dimuat.')
+      return
+    }
+    const dataUrl = canvasElement.toDataURL('image/png')
+    const link = document.createElement('a')
+    link.href = dataUrl
+    link.download = `preview-3d-${selectedType}-${activeSide}.png`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
-  const totalPrice = prices[selectedType] * quantity
-
-  const handleAddToCart = () => {
+  // FUNGSI UTAMA: MENANGKAP SNAPSHOT MOCKUP 3D SECARA OTOMATIS
+  const handleAddToCart = async () => {
     if (!designs.front.image && !designs.back.image) {
       alert('Harap unggah minimal satu desain sablon (depan atau belakang) terlebih dahulu!')
       return
@@ -116,16 +168,44 @@ function CustomStudio() {
 
     setLoading(true)
 
+    let finalPreviewImage = designs.front.image ?? designs.back.image
+
+    const canvasElement = document.querySelector('canvas')
+    if (canvasElement) {
+      try {
+        const dataUrl = canvasElement.toDataURL('image/png')
+        const res = await fetch(dataUrl)
+        const blob = await res.blob()
+        const fileName = `mockup_3d_${Date.now()}.png`
+
+        const { error: uploadError } = await supabase.storage
+          .from('designs')
+          .upload(fileName, blob, { contentType: 'image/png' })
+
+        if (!uploadError) {
+          const { data: pubData } = supabase.storage
+            .from('designs')
+            .getPublicUrl(fileName)
+          
+          if (pubData?.publicUrl) {
+            finalPreviewImage = pubData.publicUrl
+          }
+        }
+      } catch (err) {
+        console.error('Gagal merender canvas 3D:', err)
+      }
+    }
+
     const files = SIDES.filter((s) => designs[s].name).map((s) => `${SIDE_LABEL[s]}: ${designs[s].name}`)
 
     const newItem = {
       cartId: Date.now(),
       id: Date.now(),
-      title: `Custom DSCPL WEARS ${selectedType.toUpperCase()}`,
+      title: `${productTitle} (${selectedType.toUpperCase()})`,
       price: 'Rp ' + totalPrice.toLocaleString('id-ID'),
       size: size,
       quantity: quantity,
-      image: designs.front.image ?? designs.back.image,
+      image: finalPreviewImage, // Membawa gambar mockup 3D jadi ke keranjang & admin
       imageFront: designs.front.image,
       imageBack: designs.back.image,
       designFile: files.join(' | '),
@@ -136,23 +216,21 @@ function CustomStudio() {
       localStorage.setItem('dscpl_cart', JSON.stringify([...existingCart, newItem]))
     } catch {
       setLoading(false)
-      alert('Gagal menyimpan ke keranjang. Coba kecilkan ukuran file desain (maks. 1-2 MB per gambar).')
+      alert('Gagal menyimpan ke keranjang.')
       return
     }
     window.dispatchEvent(new Event('dscpl_cart_updated'))
 
-    alert('Produk berhasil dimasukkan ke keranjang!')
+    setLoading(false)
+    alert('Mockup 3D berhasil disimpan dan dimasukkan ke keranjang!')
     router.push('/checkout')
   }
 
   const active = designs[activeSide]
 
-  // Panel mini template cetak untuk satu sisi
   const DielinePanel = ({ side }: { side: Side }) => {
     const d = designs[side]
     const isActive = activeSide === side
-    // Di belakang, kiri/kanan terbalik supaya cocok dengan tampilan 3D
-    const dirX = side === 'front' ? 1 : -1
     return (
       <button
         type="button"
@@ -175,7 +253,7 @@ function CustomStudio() {
             style={{
               width: `${d.scale * 65}%`,
               height: `${d.scale * 65}%`,
-              transform: `translate(${dirX * d.x * 70}px, ${-d.y * 70}px)`,
+              transform: `translate(${d.x * 70}px, ${-d.y * 70}px)`,
             }}
           >
             <div className="absolute -top-1 -left-1 w-2 h-2 bg-white border border-blue-600 rounded-full"></div>
@@ -194,38 +272,36 @@ function CustomStudio() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-white selection:bg-white selection:text-black pb-20">
-      {/* NAVBAR */}
-      <nav className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-zinc-800 px-6 py-4 flex justify-between items-center">
-        <Link href="/" className="font-black tracking-tighter text-lg uppercase text-white">
-          DSCPL<span className="text-red-600">.</span>WEARS{' '}
-          <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full ml-2">STUDIO V2</span>
-        </Link>
-        <Link href="/products" className="text-xs font-bold uppercase tracking-wider text-zinc-400 hover:text-white transition">
-          ← Kembali ke Katalog
-        </Link>
-      </nav>
-
-      <div className="max-w-[1400px] mx-auto px-4 md:px-8 pt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <main className="min-h-screen bg-zinc-950 text-white selection:bg-white selection:text-black pb-20 pt-6 px-4 md:px-8">
+      <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* KOLOM KIRI: 3D LIVE PREVIEW */}
         <div className="lg:col-span-7 flex flex-col bg-zinc-900/40 rounded-3xl border border-zinc-800 p-4 shadow-2xl relative min-h-[620px]">
           <div className="flex justify-between items-center mb-2 px-2">
             <span className="text-xs font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
-              3D Live Preview
+              3D Live Preview ({productTitle})
             </span>
-            <div className="flex gap-1">
-              {SIDES.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setActiveSide(s)}
-                  className={`text-[10px] px-3 py-1 rounded-full font-bold transition cursor-pointer ${
-                    activeSide === s ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Lihat {SIDE_LABEL[s]}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDownload3DPreview}
+                className="bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-bold px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1"
+                title="Download gambar 3D sisi yang sedang dilihat"
+              >
+                📥 Download Preview {SIDE_LABEL[activeSide]}
+              </button>
+              <div className="flex gap-1">
+                {SIDES.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setActiveSide(s)}
+                    className={`text-[10px] px-3 py-1 rounded-full font-bold transition cursor-pointer ${
+                      activeSide === s ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Lihat {SIDE_LABEL[s]}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -257,8 +333,8 @@ function CustomStudio() {
                 <span className="text-[9px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded font-bold">Klik untuk memilih sisi</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                {DielinePanel({ side: 'front' })}
-                {DielinePanel({ side: 'back' })}
+                <DielinePanel side="front" />
+                <DielinePanel side="back" />
               </div>
             </div>
 
@@ -308,10 +384,6 @@ function CustomStudio() {
                     />
                   </div>
                 </div>
-
-                <p className="text-[10px] text-zinc-500 font-medium">
-                  Tips: desain juga bisa diseret langsung di baju 3D. Geser slider untuk kembali ke posisi standar.
-                </p>
               </div>
             )}
 
@@ -432,7 +504,7 @@ function CustomStudio() {
               disabled={loading}
               className="bg-white hover:bg-zinc-200 text-black font-black text-xs px-6 py-3.5 rounded-xl uppercase tracking-wider transition cursor-pointer shadow-lg"
             >
-              {loading ? 'Memproses...' : 'Masukkan Keranjang'}
+              {loading ? 'Merender Mockup 3D...' : 'Masukkan Keranjang'}
             </button>
           </div>
         </div>

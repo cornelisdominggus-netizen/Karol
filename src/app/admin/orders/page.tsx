@@ -33,13 +33,14 @@ export default function AdminDashboardPage() {
   // State Pesanan
   const [orders, setOrders] = useState<Order[]>([])
 
-  // State Produk Katalog
+  // State Produk Katalog & Upload File Foto
   const [products, setProducts] = useState<Product[]>([])
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
   const [newOriginalPrice, setNewOriginalPrice] = useState('')
   const [newCategory, setNewCategory] = useState('Custom Kaos')
-  const [newImage, setNewImage] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
 
   // State Pengaturan Website
   const [siteText, setSiteText] = useState({
@@ -122,36 +123,57 @@ export default function AdminDashboardPage() {
     setOrders(orders.filter((ord) => ord.id !== id))
   }
 
-  // Handler Produk
+  // Handler Produk dengan Upload File Foto ke Supabase Storage
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTitle || !newPrice) return
 
-    const { data, error } = await supabase
-      .from('products')
-      .insert({
-        title: newTitle,
-        price: newPrice,
-        original_price: newOriginalPrice || null,
-        category: newCategory,
-        image:
-          newImage ||
-          'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=500'
-      })
-      .select()
-      .single()
+    setUploadingImage(true)
+    let imageUrl = 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=500'
 
-    if (error || !data) {
-      alert('Gagal menambahkan produk.')
-      return
+    try {
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop()
+        const fileName = `${Date.now()}_prod.${fileExt}`
+        
+        const { error: uploadError } = await supabase.storage
+          .from('designs')
+          .upload(fileName, imageFile)
+
+        if (uploadError) throw uploadError
+
+        const { data: pubData } = supabase.storage
+          .from('designs')
+          .getPublicUrl(fileName)
+
+        imageUrl = pubData.publicUrl
+      }
+
+      const { data, error } = await supabase
+        .from('products')
+        .insert({
+          title: newTitle,
+          price: newPrice,
+          original_price: newOriginalPrice || null,
+          category: newCategory,
+          image: imageUrl
+        })
+        .select()
+        .single()
+
+      if (error || !data) throw error
+
+      setProducts([data as Product, ...products])
+      setNewTitle('')
+      setNewPrice('')
+      setNewOriginalPrice('')
+      setImageFile(null)
+      alert('Produk baru & foto berhasil diunggah secara real-time!')
+    } catch (err: any) {
+      alert(err.message || 'Gagal menambahkan produk.')
+    } finally {
+      setUploadingImage(false)
     }
-
-    setProducts([data as Product, ...products])
-    setNewTitle('')
-    setNewPrice('')
-    setNewOriginalPrice('')
-    setNewImage('')
-    alert('Produk baru berhasil ditambahkan ke katalog!')
   }
 
   const handleDeleteProduct = async (id: number) => {
@@ -183,19 +205,19 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 py-10 px-4 md:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <main className="min-h-screen bg-gray-50 py-6 px-3 sm:px-6 md:px-8">
+      <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header Admin */}
-        <div className="bg-black text-white p-6 md:p-8 rounded-3xl flex flex-col md:flex-row justify-between items-center gap-4 shadow">
+        <div className="bg-black text-white p-5 sm:p-6 md:p-8 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow">
           <div>
             <span className="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider">
               PANEL SUPER ADMIN DSCPL WEAR
             </span>
-            <h1 className="text-2xl font-black mt-2">Pusat Kendali & Manajemen Toko ⚙️</h1>
+            <h1 className="text-xl md:text-2xl font-black mt-2">Pusat Kendali & Manajemen Toko ⚙️</h1>
           </div>
-          <div className="flex gap-2">
-            <Link href="/products" className="bg-white text-black text-xs font-bold px-4 py-2.5 rounded-xl transition hover:bg-gray-100">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <Link href="/products" className="flex-1 sm:flex-none text-center bg-white text-black text-xs font-bold px-4 py-2.5 rounded-xl transition hover:bg-gray-100">
               Lihat Website Toko ➔
             </Link>
             <button
@@ -207,11 +229,11 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* Tab Navigasi Admin */}
-        <div className="flex flex-wrap gap-3 border-b border-gray-200 pb-3">
+        {/* Tab Navigasi Admin (Scrollable untuk HP/Tablet) */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-gray-200">
           <button
             onClick={() => setActiveTab('orders')}
-            className={`px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
+            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
               activeTab === 'orders' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
             }`}
           >
@@ -219,25 +241,25 @@ export default function AdminDashboardPage() {
           </button>
           <button
             onClick={() => setActiveTab('products')}
-            className={`px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
+            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
               activeTab === 'products' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
             }`}
           >
-            🛍️ Kelola & Tambah Katalog ({products.length})
+            🛍️ Upload & Kelola Katalog ({products.length})
           </button>
           <button
             onClick={() => setActiveTab('settings')}
-            className={`px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
+            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
               activeTab === 'settings' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
             }`}
           >
-            ⚙️ Pengaturan Promo & Teks Web
+            ⚙️ CMS Editor Teks Web
           </button>
         </div>
 
         {/* TAB 1: MANAJEMEN PESANAN */}
         {activeTab === 'orders' && (
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
+          <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
             <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">
               Daftar Pesanan Masuk Pelanggan (Supabase Database Real-Time)
             </h2>
@@ -249,7 +271,7 @@ export default function AdminDashboardPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs min-w-[700px]">
                   <thead>
                     <tr className="border-b bg-gray-50 text-gray-500 uppercase">
                       <th className="p-3">ID / Waktu</th>
@@ -268,34 +290,63 @@ export default function AdminDashboardPage() {
 
                       return (
                         <tr key={ord.id} className="hover:bg-gray-50">
-                          <td className="p-3 font-mono text-gray-500">
+                          <td className="p-3 font-mono text-gray-500 align-top">
                             #{ord.id}
                             <span className="block text-[10px] text-gray-400">
                               {new Date(ord.created_at).toLocaleString('id-ID')}
                             </span>
                           </td>
-                          <td className="p-3">
+                          <td className="p-3 align-top">
                             <p className="font-bold text-black">{ord.customer_name}</p>
                             <p className="text-[11px] text-gray-500">{ord.phone}</p>
                             <p className="text-[10px] text-gray-400">{ord.address}</p>
                           </td>
                           
-                          <td className="p-3 font-medium text-gray-800 max-w-xs">
+                          <td className="p-3 font-medium text-gray-800 max-w-xs align-top">
                             <div className="space-y-2">
                               <p className="font-semibold text-black">{itemDetail}</p>
                               
                               {fileUrl && fileUrl !== 'Tanpa file' && (
-                                <div className="pt-1">
+                                <div className="pt-1 space-y-2">
                                   {/\.(png|jpg|jpeg|webp)$/i.test(fileUrl) ? (
-                                    <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="block group">
-                                      <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 p-2 rounded-xl hover:bg-gray-100 transition">
-                                        <img src={fileUrl} alt="Preview Desain" className="w-10 h-10 object-cover rounded-lg border bg-white flex-shrink-0" />
-                                        <div className="overflow-hidden">
-                                          <p className="text-[10px] font-bold text-blue-600 truncate group-hover:underline">🔍 Klik lihat gambar penuh</p>
-                                          <p className="text-[9px] text-gray-400 uppercase">Preview Gambar Desain</p>
-                                        </div>
-                                      </div>
-                                    </a>
+                                    <>
+                                      <img 
+                                        src={fileUrl} 
+                                        alt="Preview Desain Pelanggan" 
+                                        className="w-20 h-20 object-cover rounded-xl border border-gray-300 shadow-sm bg-gray-50"
+                                        onError={(e) => {
+                                          (e.target as HTMLElement).style.display = 'none';
+                                        }}
+                                      />
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const response = await fetch(fileUrl);
+                                            if (!response.ok) {
+                                              throw new Error('File tidak ditemukan di Supabase Storage (404).');
+                                            }
+                                            const blob = await response.blob();
+                                            if (blob.type.includes('json') || blob.size < 500) {
+                                              alert('Gagal: File gambar rusak atau tidak ditemukan di server.');
+                                              return;
+                                            }
+                                            const blobUrl = window.URL.createObjectURL(blob);
+                                            const link = document.createElement('a');
+                                            link.href = blobUrl;
+                                            link.download = `desain-order-${ord.id}.png`;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                            window.URL.revokeObjectURL(blobUrl);
+                                          } catch (err: any) {
+                                            alert(err.message || 'Gagal mendownload file.');
+                                          }
+                                        }}
+                                        className="inline-flex items-center gap-1.5 bg-black hover:bg-zinc-800 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition shadow-sm cursor-pointer"
+                                      >
+                                        📥 Download Gambar Desain
+                                      </button>
+                                    </>
                                   ) : (
                                     <a 
                                       href={fileUrl} 
@@ -311,12 +362,12 @@ export default function AdminDashboardPage() {
                             </div>
                           </td>
 
-                          <td className="p-3 font-black text-red-600">{ord.total_price}</td>
-                          <td className="p-3">
+                          <td className="p-3 font-black text-red-600 align-top">{ord.total_price}</td>
+                          <td className="p-3 align-top">
                             <select
                               value={ord.status}
                               onChange={(e) => handleUpdateStatus(ord.id, e.target.value)}
-                              className="font-bold px-3 py-1.5 rounded-xl border text-xs focus:outline-none bg-yellow-50 text-yellow-700 border-yellow-200"
+                              className="font-bold px-3 py-1.5 rounded-xl border text-xs focus:outline-none bg-yellow-50 text-yellow-700 border-yellow-200 cursor-pointer"
                             >
                               <option value="Pending">Pending</option>
                               <option value="Diproses">Diproses</option>
@@ -324,7 +375,7 @@ export default function AdminDashboardPage() {
                               <option value="Selesai">Selesai</option>
                             </select>
                           </td>
-                          <td className="p-3 text-center space-x-2 whitespace-nowrap">
+                          <td className="p-3 text-center align-top whitespace-nowrap">
                             <button
                               onClick={() => handleDeleteOrder(ord.id)}
                               className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
@@ -342,13 +393,13 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: TAMBAH & KELOLA KATALOG */}
+        {/* TAB 2: TAMBAH & KELOLA KATALOG DENGAN UPLOAD FOTO */}
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
               <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">
-                + Tambah Produk Baru
+                + Tambah Produk & Upload Foto
               </h2>
 
               <form onSubmit={handleAddProduct} className="space-y-3 text-xs">
@@ -356,7 +407,7 @@ export default function AdminDashboardPage() {
                   <label className="block font-bold mb-1">Nama Produk *</label>
                   <input
                     type="text"
-                    placeholder="Contoh: Custom Kaos Oversized"
+                    placeholder="Contoh: Custom Kaos Kerajaan"
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
@@ -368,7 +419,7 @@ export default function AdminDashboardPage() {
                   <label className="block font-bold mb-1">Harga Jual Diskon *</label>
                   <input
                     type="text"
-                    placeholder="Contoh: Rp 90.000"
+                    placeholder="Contoh: Rp 70.000"
                     value={newPrice}
                     onChange={(e) => setNewPrice(e.target.value)}
                     className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
@@ -380,7 +431,7 @@ export default function AdminDashboardPage() {
                   <label className="block font-bold mb-1">Harga Asli / Coret (Opsional)</label>
                   <input
                     type="text"
-                    placeholder="Contoh: Rp 180.000"
+                    placeholder="Contoh: Rp 150.000"
                     value={newOriginalPrice}
                     onChange={(e) => setNewOriginalPrice(e.target.value)}
                     className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
@@ -406,21 +457,22 @@ export default function AdminDashboardPage() {
                 </div>
 
                 <div>
-                  <label className="block font-bold mb-1">URL Gambar (Foto Produk)</label>
+                  <label className="block font-bold mb-1">Upload Foto Contoh Baju</label>
                   <input
-                    type="text"
-                    placeholder="https://images.unsplash.com/..."
-                    value={newImage}
-                    onChange={(e) => setNewImage(e.target.value)}
-                    className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                    className="w-full bg-gray-50 border rounded-xl p-2 text-xs font-semibold text-black file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-black file:text-white hover:file:bg-zinc-800 cursor-pointer"
                   />
+                  <p className="text-[10px] text-gray-400 mt-1">Pilih foto produk (PNG/JPG) dari perangkat Anda.</p>
                 </div>
 
                 <button
                   type="submit"
+                  disabled={uploadingImage}
                   className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer"
                 >
-                  SIMPAN PRODUK
+                  {uploadingImage ? 'Mengunggah & Menyimpan...' : 'SIMPAN & TAYANGKAN REAL-TIME'}
                 </button>
               </form>
             </div>
@@ -434,7 +486,7 @@ export default function AdminDashboardPage() {
                 {products.map((p) => (
                   <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border flex items-center justify-between gap-3">
                     {p.image && (
-                      <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white" />
+                      <img src={p.image} alt="" className="w-14 h-14 object-cover rounded-xl bg-white shadow-sm flex-shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
                       <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
@@ -460,7 +512,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 3: PENGATURAN PROMO & TEKS */}
+        {/* TAB 3: PENGATURAN CMS & TEKS */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-6 max-w-2xl">
             <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">
