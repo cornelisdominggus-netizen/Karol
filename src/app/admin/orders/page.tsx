@@ -229,7 +229,7 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* Tab Navigasi Admin (Scrollable untuk HP/Tablet) */}
+        {/* Tab Navigasi Admin */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-gray-200">
           <button
             onClick={() => setActiveTab('orders')}
@@ -446,13 +446,12 @@ export default function AdminDashboardPage() {
                     className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black"
                   >
                     <option value="Custom Kaos">Custom Kaos</option>
+                    <option value="Custom Oversized">Custom Oversized</option>
                     <option value="Custom Hoodie">Custom Hoodie</option>
                     <option value="Custom Topi">Custom Topi</option>
                     <option value="Custom Tas">Custom Tas</option>
                     <option value="Custom Merchandise">Custom Merchandise</option>
-                    <option value="Alat & Bahan DTF">Alat & Bahan DTF</option>
                     <option value="Polosan">Polosan</option>
-                    <option value="Download">Download</option>
                   </select>
                 </div>
 

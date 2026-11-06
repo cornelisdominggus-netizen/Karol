@@ -42,6 +42,10 @@ function CustomStudio() {
   const [productTitle, setProductTitle] = useState<string>('Custom Apparel')
   const [unitPrice, setUnitPrice] = useState<number>(95000)
 
+  // State untuk list katalog produk berdasarkan kategori yang dipilih
+  const [catalogProducts, setCatalogProducts] = useState<any[]>([])
+  const [selectedCatalogId, setSelectedCatalogId] = useState<string>(productIdParam || '')
+
   const [designs, setDesigns] = useState<Record<Side, SideDesign>>({ front: EMPTY_SIDE, back: EMPTY_SIDE })
   const [activeSide, setActiveSide] = useState<Side>('front')
 
@@ -54,6 +58,31 @@ function CustomStudio() {
     back: useRef<HTMLInputElement>(null),
   }
 
+  // Ambil list produk dari Supabase berdasarkan jenis pakaian yang aktif
+  useEffect(() => {
+    const fetchCatalogByCategory = async () => {
+      let categoryKeyword = 'Kaos'
+      if (selectedType === 'hoodie') categoryKeyword = 'Hoodie'
+      else if (selectedType === 'topi') categoryKeyword = 'Topi'
+      else if (selectedType === 'oversized') categoryKeyword = 'Oversized'
+
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .ilike('category', `%${categoryKeyword}%`)
+        .order('created_at', { ascending: false })
+
+      if (data && !error) {
+        setCatalogProducts(data)
+      } else {
+        setCatalogProducts([])
+      }
+    }
+
+    fetchCatalogByCategory()
+  }, [selectedType])
+
+  // Ambil detail produk jika ada ID di URL
   useEffect(() => {
     const fetchProductDetails = async () => {
       if (productIdParam) {
@@ -67,23 +96,18 @@ function CustomStudio() {
           setProductTitle(data.title)
           const parsedPrice = parseInt(data.price.replace(/[^0-9]/g, ''))
           if (parsedPrice > 0) setUnitPrice(parsedPrice)
-          
-          const lowerTitle = data.title.toLowerCase()
-          if (lowerTitle.includes('oversized')) setSelectedType('oversized')
-          else if (lowerTitle.includes('hoodie')) setSelectedType('hoodie')
-          else if (lowerTitle.includes('topi')) setSelectedType('topi')
-          else if (lowerTitle.includes('kaos') || lowerTitle.includes('custom')) setSelectedType('kaos')
-          return
+          setSelectedCatalogId(String(data.id))
         }
+      } else {
+        const defaultPrices: Record<ApparelType, number> = {
+          kaos: 95000,
+          oversized: 120000,
+          hoodie: 220000,
+          topi: 75000,
+        }
+        setUnitPrice(defaultPrices[selectedType])
+        setProductTitle(`Custom ${selectedType.toUpperCase()}`)
       }
-
-      const defaultPrices: Record<ApparelType, number> = {
-        kaos: 95000,
-        oversized: 120000,
-        hoodie: 220000,
-        topi: 75000,
-      }
-      setUnitPrice(defaultPrices[selectedType])
     }
 
     fetchProductDetails()
@@ -99,24 +123,32 @@ function CustomStudio() {
     }
   }, [typeParam])
 
+  // Saat tombol jenis pakaian diklik
   const handleTypeChange = (type: ApparelType) => {
     setSelectedType(type)
+    setSelectedCatalogId('')
+    
     const defaultPrices: Record<ApparelType, number> = {
       kaos: 95000,
       oversized: 120000,
       hoodie: 220000,
       topi: 75000,
     }
-    if (!productIdParam) setUnitPrice(defaultPrices[type])
+    setUnitPrice(defaultPrices[type])
+    setProductTitle(`Custom ${type.toUpperCase()}`)
+
     router.replace(`/custom?type=${type}`, { scroll: false })
   }
 
-  useEffect(() => {
-    setDesigns((d) => ({
-      front: { ...d.front, scale: 0.8, x: 0, y: 0.1 },
-      back: { ...d.back, scale: 0.8, x: 0, y: 0.1 },
-    }))
-  }, [selectedType])
+  // Saat pengguna memilih produk spesifik dari list katalog
+  const handleSelectCatalogProduct = (prod: any) => {
+    setSelectedCatalogId(String(prod.id))
+    setProductTitle(prod.title)
+    const parsedPrice = parseInt(String(prod.price).replace(/[^0-9]/g, ''))
+    if (parsedPrice > 0) setUnitPrice(parsedPrice)
+
+    router.replace(`/custom?type=${selectedType}&id=${prod.id}`, { scroll: false })
+  }
 
   const handleFileChange = (side: Side) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -159,7 +191,6 @@ function CustomStudio() {
     document.body.removeChild(link)
   }
 
-  // FUNGSI UTAMA: MENANGKAP SNAPSHOT MOCKUP 3D SECARA OTOMATIS
   const handleAddToCart = async () => {
     if (!designs.front.image && !designs.back.image) {
       alert('Harap unggah minimal satu desain sablon (depan atau belakang) terlebih dahulu!')
@@ -201,11 +232,11 @@ function CustomStudio() {
     const newItem = {
       cartId: Date.now(),
       id: Date.now(),
-      title: `${productTitle} (${selectedType.toUpperCase()})`,
+      title: productTitle,
       price: 'Rp ' + totalPrice.toLocaleString('id-ID'),
       size: size,
       quantity: quantity,
-      image: finalPreviewImage, // Membawa gambar mockup 3D jadi ke keranjang & admin
+      image: finalPreviewImage,
       imageFront: designs.front.image,
       imageBack: designs.back.image,
       designFile: files.join(' | '),
@@ -235,15 +266,15 @@ function CustomStudio() {
       <button
         type="button"
         onClick={() => setActiveSide(side)}
-        className={`w-full h-44 bg-zinc-900 rounded-xl border relative flex items-center justify-center overflow-hidden p-2 text-left cursor-pointer transition ${
-          isActive ? 'border-blue-500 ring-1 ring-blue-500/60' : 'border-zinc-700/60 opacity-70 hover:opacity-100'
+        className={`w-full h-36 sm:h-40 bg-zinc-900 rounded-2xl border relative flex items-center justify-center overflow-hidden p-2 text-left cursor-pointer transition ${
+          isActive ? 'border-blue-500 ring-1 ring-blue-500/60' : 'border-zinc-800 opacity-70 hover:opacity-100'
         }`}
       >
         <span className="absolute top-2 left-2 text-[8px] text-zinc-400 font-black uppercase">
-          {SIDE_LABEL[side]} ({side === 'front' ? 'Front' : 'Back'})
+          {SIDE_LABEL[side]}
         </span>
 
-        <svg className="absolute w-28 h-32 opacity-15 text-white" viewBox="0 0 24 24" fill="currentColor">
+        <svg className="absolute w-24 h-28 opacity-15 text-white" viewBox="0 0 24 24" fill="currentColor">
           <path d="M15.5 2H8.5L5 6l3 2v12h8V8l3-2-3.5-4z" />
         </svg>
 
@@ -251,20 +282,20 @@ function CustomStudio() {
           <div
             className="absolute z-10 flex items-center justify-center border-2 border-blue-500 bg-blue-500/5 p-1 transition-all shadow-lg"
             style={{
-              width: `${d.scale * 65}%`,
-              height: `${d.scale * 65}%`,
-              transform: `translate(${d.x * 70}px, ${-d.y * 70}px)`,
+              width: `${d.scale * 60}%`,
+              height: `${d.scale * 60}%`,
+              transform: `translate(${d.x * 60}px, ${-d.y * 60}px)`,
             }}
           >
-            <div className="absolute -top-1 -left-1 w-2 h-2 bg-white border border-blue-600 rounded-full"></div>
-            <div className="absolute -top-1 -right-1 w-2 h-2 bg-white border border-blue-600 rounded-full"></div>
-            <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-white border border-blue-600 rounded-full"></div>
-            <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-white border border-blue-600 rounded-full"></div>
+            <div className="absolute -top-1 -left-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
+            <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
+            <div className="absolute -bottom-1 -left-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
+            <div className="absolute -bottom-1 -right-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
             <img src={d.image} alt={`Desain ${SIDE_LABEL[side]}`} className="w-full h-full object-contain pointer-events-none" />
           </div>
         ) : (
           <span className="text-[9px] text-zinc-500 font-medium text-center z-10">
-            {side === 'front' ? 'Upload artwork depan' : 'Polos (tanpa sablon)'}
+            {side === 'front' ? 'Upload depan' : 'Polos'}
           </span>
         )}
       </button>
@@ -274,8 +305,9 @@ function CustomStudio() {
   return (
     <main className="min-h-screen bg-zinc-950 text-white selection:bg-white selection:text-black pb-20 pt-6 px-4 md:px-8">
       <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
         {/* KOLOM KIRI: 3D LIVE PREVIEW */}
-        <div className="lg:col-span-7 flex flex-col bg-zinc-900/40 rounded-3xl border border-zinc-800 p-4 shadow-2xl relative min-h-[620px]">
+        <div className="lg:col-span-7 flex flex-col bg-zinc-900/40 rounded-3xl border border-zinc-800/80 p-4 shadow-2xl relative min-h-[500px] lg:min-h-[650px]">
           <div className="flex justify-between items-center mb-2 px-2">
             <span className="text-xs font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
@@ -287,7 +319,7 @@ function CustomStudio() {
                 className="bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-bold px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1"
                 title="Download gambar 3D sisi yang sedang dilihat"
               >
-                📥 Download Preview {SIDE_LABEL[activeSide]}
+                📥 Download {SIDE_LABEL[activeSide]}
               </button>
               <div className="flex gap-1">
                 {SIDES.map((s) => (
@@ -298,14 +330,14 @@ function CustomStudio() {
                       activeSide === s ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'
                     }`}
                   >
-                    Lihat {SIDE_LABEL[s]}
+                    {SIDE_LABEL[s]}
                   </button>
                 ))}
               </div>
             </div>
           </div>
 
-          <div className="w-full flex-1 flex items-center justify-center rounded-2xl bg-zinc-950/60 border border-zinc-800/80 overflow-hidden relative">
+          <div className="w-full flex-1 flex items-center justify-center rounded-2xl bg-zinc-950/60 border border-zinc-800/80 overflow-hidden relative min-h-[420px]">
             <Mockup3D
               apparelType={selectedType}
               color={selectedColor}
@@ -318,19 +350,66 @@ function CustomStudio() {
           </div>
         </div>
 
-        {/* KOLOM KANAN: EDITOR */}
-        <div className="lg:col-span-5 bg-zinc-900 p-6 rounded-3xl border border-zinc-800 shadow-xl space-y-5 flex flex-col justify-between">
-          <div className="space-y-4">
+        {/* KOLOM KANAN: EDITOR (DIBUAT LEBIH LAPANG & TIDAK PADAT) */}
+        <div className="lg:col-span-5 bg-zinc-900 p-5 sm:p-6 rounded-3xl border border-zinc-800/80 shadow-xl space-y-6 flex flex-col justify-between">
+          <div className="space-y-5">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wider text-red-500">Editor Template 2D & Kontrol</h2>
-              <p className="text-xs text-zinc-400 font-medium">Tata letak desain pada pola cetak depan & belakang.</p>
+              <h2 className="text-sm font-black uppercase tracking-wider text-red-500">Studio Editor 3D & Katalog</h2>
+              <p className="text-xs text-zinc-400 font-medium">Pilih pakaian, atur desain, dan sesuaikan pesanan Anda.</p>
             </div>
 
-            {/* TEMPLATE DIELINE DEPAN & BELAKANG */}
-            <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 space-y-2">
+            {/* 1. PILIH JENIS PAKAIAN & KATALOG PRODUK SPESIFIK */}
+            <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/80 space-y-3">
+              <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">1. Jenis Pakaian</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {APPAREL_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    onClick={() => handleTypeChange(type)}
+                    className={`py-2 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition cursor-pointer border ${
+                      selectedType === type ? 'bg-white text-black border-white shadow' : 'bg-zinc-800/80 text-zinc-300 border-zinc-700/60 hover:bg-zinc-700'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+
+              <div className="pt-2 space-y-2">
+                <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">2. Pilih Katalog Spesifik</label>
+                {catalogProducts.length === 0 ? (
+                  <p className="text-[10px] text-zinc-500 italic">Belum ada produk untuk kategori ini.</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto pr-1">
+                    {catalogProducts.map((prod) => {
+                      const isSelected = selectedCatalogId === String(prod.id)
+                      return (
+                        <button
+                          key={prod.id}
+                          type="button"
+                          onClick={() => handleSelectCatalogProduct(prod)}
+                          className={`w-full flex items-center justify-between p-2 rounded-xl text-left border transition cursor-pointer ${
+                            isSelected ? 'bg-red-600/20 border-red-500 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            {prod.image && <img src={prod.image} alt="" className="w-7 h-7 object-cover rounded-lg bg-zinc-800 flex-shrink-0" />}
+                            <span className="text-xs font-bold truncate">{prod.title}</span>
+                          </div>
+                          <span className="text-xs font-black text-red-400 flex-shrink-0 ml-2">{prod.price}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 2. TEMPLATE DIELINE DEPAN & BELAKANG */}
+            <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/80 space-y-2">
               <div className="flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Template Dieline (Depan & Belakang)</span>
-                <span className="text-[9px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded font-bold">Klik untuk memilih sisi</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Template Dieline Sisi Cetak</span>
+                <span className="text-[9px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded font-bold">Klik sisi aktif</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <DielinePanel side="front" />
@@ -340,9 +419,9 @@ function CustomStudio() {
 
             {/* SLIDER UNTUK SISI YANG AKTIF */}
             {active.image && (
-              <div className="bg-zinc-800/80 p-3.5 rounded-2xl border border-zinc-700 space-y-2.5">
+              <div className="bg-zinc-800/80 p-3.5 rounded-2xl border border-zinc-700/60 space-y-2.5">
                 <span className="text-[11px] font-black uppercase tracking-wider text-white block">
-                  📐 Atur Desain {SIDE_LABEL[activeSide]}
+                  📐 Atur Posisi Desain {SIDE_LABEL[activeSide]}
                 </span>
 
                 <div>
@@ -387,50 +466,31 @@ function CustomStudio() {
               </div>
             )}
 
-            {/* JENIS PAKAIAN & WARNA */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">Jenis Pakaian</label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {APPAREL_TYPES.map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => handleTypeChange(type)}
-                      className={`py-2 px-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition cursor-pointer border ${
-                        selectedType === type ? 'bg-white text-black border-white' : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">Warna Bahan</label>
-                <div className="flex gap-2 pt-1">
-                  {[
-                    { name: 'White', hex: '#ffffff' },
-                    { name: 'Black', hex: '#111111' },
-                    { name: 'Gray', hex: '#71717a' },
-                    { name: 'Navy', hex: '#1e1b4b' },
-                    { name: 'Red', hex: '#7f1d1d' },
-                  ].map((c) => (
-                    <button
-                      key={c.hex}
-                      onClick={() => setSelectedColor(c.hex)}
-                      title={c.name}
-                      className={`w-7 h-7 rounded-full border-2 transition cursor-pointer ${
-                        selectedColor === c.hex ? 'ring-2 ring-red-600 ring-offset-2 ring-offset-zinc-900 scale-110' : 'border-zinc-700'
-                      }`}
-                      style={{ backgroundColor: c.hex }}
-                    />
-                  ))}
-                </div>
+            {/* 3. WARNA BAHAN */}
+            <div className="space-y-1.5">
+              <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">Warna Bahan</label>
+              <div className="flex gap-2.5 pt-1">
+                {[
+                  { name: 'White', hex: '#ffffff' },
+                  { name: 'Black', hex: '#111111' },
+                  { name: 'Gray', hex: '#71717a' },
+                  { name: 'Navy', hex: '#1e1b4b' },
+                  { name: 'Red', hex: '#7f1d1d' },
+                ].map((c) => (
+                  <button
+                    key={c.hex}
+                    onClick={() => setSelectedColor(c.hex)}
+                    title={c.name}
+                    className={`w-7 h-7 rounded-full border-2 transition cursor-pointer ${
+                      selectedColor === c.hex ? 'ring-2 ring-red-600 ring-offset-2 ring-offset-zinc-900 scale-110' : 'border-zinc-700'
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                  />
+                ))}
               </div>
             </div>
 
-            {/* UPLOAD DESAIN DEPAN & BELAKANG */}
+            {/* 4. UUNGGAH ARTWORK */}
             <div className="space-y-1.5">
               <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">Unggah Artwork (PNG Transparan)</label>
               <div className="grid grid-cols-2 gap-3">
@@ -445,10 +505,10 @@ function CustomStudio() {
                     />
                     <button
                       onClick={() => fileInputRefs[side].current?.click()}
-                      className="w-full border-2 border-dashed border-zinc-700 hover:border-white py-3 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition bg-zinc-800/40 cursor-pointer"
+                      className="w-full border-2 border-dashed border-zinc-700 hover:border-white py-2.5 px-2 rounded-xl flex flex-col items-center justify-center gap-0.5 transition bg-zinc-800/40 cursor-pointer"
                     >
                       <span className="text-[10px] font-black uppercase text-zinc-400">Desain {SIDE_LABEL[side]}</span>
-                      <span className="text-xs font-black text-zinc-200 max-w-full truncate">
+                      <span className="text-[11px] font-black text-zinc-200 max-w-full truncate">
                         {designs[side].name ? `📁 ${designs[side].name}` : '📁 Pilih File'}
                       </span>
                     </button>
@@ -466,7 +526,7 @@ function CustomStudio() {
               </div>
             </div>
 
-            {/* UKURAN & JUMLAH */}
+            {/* 5. UKURAN & JUMLAH */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300 mb-1">Ukuran</label>
@@ -502,9 +562,9 @@ function CustomStudio() {
             <button
               onClick={handleAddToCart}
               disabled={loading}
-              className="bg-white hover:bg-zinc-200 text-black font-black text-xs px-6 py-3.5 rounded-xl uppercase tracking-wider transition cursor-pointer shadow-lg"
+              className="bg-white hover:bg-zinc-200 text-black font-black text-xs px-5 py-3.5 rounded-xl uppercase tracking-wider transition cursor-pointer shadow-lg whitespace-nowrap"
             >
-              {loading ? 'Merender Mockup 3D...' : 'Masukkan Keranjang'}
+              {loading ? 'Merender...' : 'Masukkan Keranjang'}
             </button>
           </div>
         </div>
