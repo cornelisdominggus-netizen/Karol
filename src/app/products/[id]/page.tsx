@@ -3,65 +3,70 @@
 import { Suspense, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
+
+// Import dinamis komponen 3D Mockup agar berjalan di sisi client
+const Mockup3D = dynamic(() => import('@/components/Mockup3D'), { ssr: false })
 
 function ProductDetail() {
   const params = useParams()
   const productId = (params?.id as string) || 'kaos'
 
-  const [selectedColor, setSelectedColor] = useState('Hitam')
+  const [selectedColor, setSelectedColor] = useState('#ffffff')
   const [selectedSize, setSelectedSize] = useState('L')
   const [quantity, setQuantity] = useState(1)
   
-  // State untuk menangani File Upload & Live Preview Mockup
+  // State untuk 3D Mockup (Desain & Posisi)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [designScale, setDesignScale] = useState(0.8)
+  const [positionX, setPositionX] = useState(0)
+  const [positionY, setPositionY] = useState(0.1)
 
-  // Konfigurasi dinamis berdasarkan jenis produk yang dipilih
+  // Tentukan tipe apparel berdasarkan URL/ID produk
+  let apparelType = 'kaos'
   let productTitle = 'Custom Kaos Lengan Pendek Oversize'
   let productPrice = 'Rp 90.000'
   let originalPrice = 'Rp 180.000'
-  let mockupImage = 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=80' // Model Kaos Pendek
 
-  if (productId.includes('panjang') || productId.includes('lengan-panjang')) {
-    productTitle = 'Custom Kaos Lengan Panjang Dewasa 30s'
-    productPrice = 'Rp 75.000'
-    originalPrice = 'Rp 150.000'
-    // Foto model kaos lengan panjang
-    mockupImage = 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800&auto=format&fit=crop&q=80'
-  } else if (productId.includes('hoodie')) {
+  if (productId.includes('hoodie') || productId.toLowerCase().includes('hoodie')) {
+    apparelType = 'hoodie'
     productTitle = 'Custom Hoodie Fleece Premium'
     productPrice = 'Rp 110.000'
     originalPrice = 'Rp 220.000'
-    // Foto model hoodie
-    mockupImage = 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=80'
-  } else if (productId.includes('topi')) {
+  } else if (productId.includes('topi') || productId.toLowerCase().includes('topi')) {
+    apparelType = 'topi'
     productTitle = 'Custom Topi Trucker Jaring'
     productPrice = 'Rp 24.689'
     originalPrice = 'Rp 49.938'
-    // Foto model topi
-    mockupImage = 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=800&auto=format&fit=crop&q=80'
-  } else if (productId.includes('anak')) {
-    productTitle = 'Custom Kaos Lengan Pendek Anak & Dewasa 30s'
-    productPrice = 'Rp 50.000'
-    originalPrice = 'Rp 100.000'
-    mockupImage = 'https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=800&auto=format&fit=crop&q=80'
+  } else if (productId.includes('tas') || productId.toLowerCase().includes('tas')) {
+    apparelType = 'tas'
+    productTitle = 'Custom Tas Premium'
+    productPrice = 'Rp 85.000'
+    originalPrice = 'Rp 170.000'
+  } else if (productId.includes('oversized') || productId.toLowerCase().includes('oversize')) {
+    apparelType = 'oversized'
+    productTitle = 'Custom Kaos Lengan Pendek Oversize'
+    productPrice = 'Rp 120.000'
+    originalPrice = 'Rp 240.000'
   }
 
   const product = {
     title: productTitle,
-    category: 'Produk Custom',
+    category: 'Produk Custom 3D',
     originalPrice: originalPrice,
     promoPrice: productPrice,
     rating: 5,
-    reviews: 4,
-    description: `Custom ${productTitle} berkualitas tinggi standar distro. Unggah file desain Anda (JPG, PNG, PDF), dan lihat preview langsung pada mockup produk.`,
+    reviews: 12,
+    description: `Custom ${productTitle} berkualitas tinggi standar distro. Putar model 3D di sebelah kiri, unggah file desain Anda, dan sesuaikan posisinya secara real-time.`,
     colors: [
-      { name: 'Hitam', hex: '#000000' },
       { name: 'Putih', hex: '#ffffff' },
-      { name: 'Navy', hex: '#1e3a8a' },
-      { name: 'Maroon', hex: '#b91c1c' }
+      { name: 'Hitam', hex: '#111111' },
+      { name: 'Gray', hex: '#71717a' },
+      { name: 'Navy', hex: '#1e1b4b' },
+      { name: 'Maroon', hex: '#7f1d1d' }
     ],
-    sizes: ['S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL']
+    sizes: ['S', 'M', 'L', 'XL', 'XXL', '3XL']
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -88,117 +93,94 @@ function ProductDetail() {
       color: selectedColor,
       size: selectedSize,
       quantity: quantity,
+      image: previewImage,
       fileName: uploadedFile ? uploadedFile.name : 'Tidak ada desain diunggah'
     }
 
     const existingCart = JSON.parse(localStorage.getItem('dscpl_cart') || '[]')
     existingCart.push(cartItem)
     localStorage.setItem('dscpl_cart', JSON.stringify(existingCart))
+    window.dispatchEvent(new Event('dscpl_cart_updated'))
 
-    alert(`Berhasil menambahkan "${product.title}" (${selectedColor}, Ukuran ${selectedSize}) dengan desain: ${cartItem.fileName} ke keranjang!`)
+    alert(`Berhasil menambahkan "${product.title}" ke keranjang!`)
     window.location.href = '/checkout'
   }
 
   return (
-    <main className="min-h-screen bg-white text-black py-8 px-4">
-      <div className="max-w-6xl mx-auto">
+    <main className="min-h-screen bg-zinc-950 text-white py-8 px-4">
+      <div className="max-w-7xl mx-auto">
         
         {/* Breadcrumb */}
-        <div className="text-xs font-semibold text-gray-500 mb-6 uppercase tracking-wider">
-          <Link href="/" className="hover:text-black">Beranda</Link> / <Link href="/custom-order?type=kaos" className="hover:text-black">Produk Custom</Link> / <span className="text-black font-bold">{product.title}</span>
+        <div className="text-xs font-semibold text-zinc-400 mb-6 uppercase tracking-wider">
+          <Link href="/" className="hover:text-white">Beranda</Link> / <Link href="/products" className="hover:text-white">Katalog</Link> / <span className="text-white font-bold">{product.title}</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* SISI KIRI: Foto Model Otomatis Menyesuaikan Produk + Kotak Panduan & Live Preview */}
-          <div className="space-y-4">
-            <div className="w-full h-[520px] bg-gray-100 rounded-3xl border border-gray-200 flex items-center justify-center relative overflow-hidden shadow-sm">
-              <span className="absolute top-4 left-4 bg-black text-white text-xs font-bold px-3 py-1 rounded-full uppercase z-20 shadow">
-                DSCPL MOCKUP PREVIEW
+          {/* SISI KIRI: MENGGANTI FOTO MODEL DENGAN 3D MOCKUP INTERAKTIF */}
+          <div className="lg:col-span-7 bg-zinc-900/50 rounded-3xl border border-zinc-800 p-4 shadow-2xl relative min-h-[580px] flex flex-col">
+            <div className="flex justify-between items-center mb-2 px-2 z-10">
+              <span className="text-xs font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span> 
+                3D Interactive Mockup ({apparelType.toUpperCase()})
               </span>
-
-              {/* Foto Model Dinamis Sesuai Produk */}
-              <img src={mockupImage} alt="Model Produk" className="w-full h-full object-cover filter brightness-95" />
-
-              {/* Overlay Panduan: Foto, Desain, Tulisan */}
-              <div className="absolute inset-0 pointer-events-none p-6 flex flex-col justify-between z-10">
-                <div className="flex justify-between items-start">
-                  <span className="bg-black/80 text-white text-xs font-bold px-3 py-1 rounded-xl uppercase tracking-wider shadow">
-                    Foto 📷
-                  </span>
-                  <span className="bg-black/80 text-white text-xs font-bold px-3 py-1 rounded-xl uppercase tracking-wider shadow">
-                    Desain 🎨
-                  </span>
-                </div>
-
-                {/* Kotak Area Cetak */}
-                <div className="w-48 h-48 mx-auto border-2 border-dashed border-white rounded-2xl flex items-center justify-center relative bg-black/20 shadow-2xl">
-                  <span className="text-[10px] font-black text-white uppercase tracking-widest bg-black/70 px-2 py-1 rounded">
-                    Area Cetak Sablon
-                  </span>
-
-                  {/* Live Preview Desain Pelanggan */}
-                  {previewImage && (
-                    <div className="absolute inset-2 bg-white/95 rounded-xl overflow-hidden flex items-center justify-center shadow-2xl">
-                      <img src={previewImage} alt="Preview Desain" className="w-full h-full object-contain" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex justify-between items-end">
-                  <span className="bg-black/80 text-white text-xs font-bold px-3 py-1 rounded-xl uppercase tracking-wider shadow">
-                    Tulisan ✍️
-                  </span>
-                  {uploadedFile && (
-                    <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow">
-                      {uploadedFile.name}
-                    </span>
-                  )}
-                </div>
-              </div>
-
+              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-3 py-1 rounded-full font-bold">
+                Seret baju untuk memutar • Scroll untuk zoom
+              </span>
             </div>
-            <p className="text-xs text-gray-500 text-center">
-              {previewImage ? 'Desain Anda berhasil dimuat ke mockup produk.' : 'Unggah file JPG, PNG, atau PDF untuk melihat preview desain.'}
-            </p>
+
+            <div className="w-full flex-1 flex items-center justify-center rounded-2xl bg-zinc-950/80 border border-zinc-800 overflow-hidden relative min-h-[500px]">
+              <Mockup3D 
+                apparelType={apparelType} 
+                color={selectedColor} 
+                designImage={previewImage}
+                designScale={designScale}
+                positionX={positionX}
+                positionY={positionY}
+                onPositionChange={(x, y) => {
+                  setPositionX(x)
+                  setPositionY(y)
+                }}
+              />
+            </div>
           </div>
 
-          {/* SISI KANAN: Informasi, Pilihan & Upload File */}
-          <div className="space-y-6">
+          {/* SISI KANAN: Informasi Produk, Warna, Ukuran & Upload */}
+          <div className="lg:col-span-5 bg-zinc-900 p-6 rounded-3xl border border-zinc-800 shadow-xl space-y-6">
             <div>
-              <span className="bg-gray-200 text-black text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+              <span className="bg-zinc-800 text-zinc-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 {product.category}
               </span>
-              <h1 className="text-3xl font-black text-black mt-3">{product.title}</h1>
+              <h1 className="text-2xl font-black text-white mt-3">{product.title}</h1>
 
-              {/* Rating */}
               <div className="flex items-center gap-2 mt-2">
                 <span className="text-yellow-500 text-sm">★★★★★</span>
-                <span className="text-xs text-gray-600 font-semibold">({product.reviews} ulasan pelanggan)</span>
+                <span className="text-xs text-zinc-400 font-semibold">({product.reviews} ulasan pelanggan)</span>
               </div>
             </div>
 
-            {/* Harga */}
-            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 flex items-baseline gap-3">
-              <span className="text-sm text-gray-400 line-through font-semibold">{product.originalPrice}</span>
-              <span className="text-2xl font-black text-red-600">{product.promoPrice}</span>
+            <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 flex items-baseline gap-3">
+              <span className="text-xs text-zinc-500 line-through font-semibold">{product.originalPrice}</span>
+              <span className="text-2xl font-black text-red-500">{product.promoPrice}</span>
             </div>
 
-            <p className="text-sm text-gray-600 mt-4 leading-relaxed">
+            <p className="text-xs text-zinc-400 leading-relaxed">
               {product.description}
             </p>
 
-            {/* Pilihan Warna */}
-            <div>
-              <label className="block text-xs font-bold text-black uppercase mb-2">
-                Pilih Warna: <span className="text-gray-600 font-normal">{selectedColor}</span>
+            {/* Pilihan Warna Bahan */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-300 uppercase">
+                Pilih Warna Bahan: <span className="text-white font-normal">{selectedColor}</span>
               </label>
               <div className="flex items-center gap-2">
-                {product.colors.map((c, idx) => (
+                {product.colors.map((c) => (
                   <button
-                    key={idx}
-                    onClick={() => setSelectedColor(c.name)}
-                    className={`w-8 h-8 rounded-full border-2 transition ${selectedColor === c.name ? 'border-black scale-110 shadow-md' : 'border-gray-300'}`}
+                    key={c.hex}
+                    onClick={() => setSelectedColor(c.hex)}
+                    className={`w-8 h-8 rounded-full border-2 transition cursor-pointer ${
+                      selectedColor === c.hex ? 'ring-2 ring-red-600 ring-offset-2 ring-offset-zinc-900 scale-110' : 'border-zinc-700'
+                    }`}
                     style={{ backgroundColor: c.hex }}
                     title={c.name}
                   />
@@ -207,19 +189,19 @@ function ProductDetail() {
             </div>
 
             {/* Pilihan Ukuran */}
-            <div>
-              <label className="block text-xs font-bold text-black uppercase mb-2">
-                Pilih Ukuran: <span className="text-gray-600 font-normal">{selectedSize}</span>
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-300 uppercase">
+                Pilih Ukuran: <span className="text-white font-normal">{selectedSize}</span>
               </label>
               <div className="flex flex-wrap gap-2">
                 {product.sizes.map((size) => (
                   <button
                     key={size}
                     onClick={() => setSelectedSize(size)}
-                    className={`px-4 py-2 rounded-xl text-xs font-bold transition border ${
+                    className={`px-4 py-2 rounded-xl text-xs font-bold transition border cursor-pointer ${
                       selectedSize === size 
-                        ? 'bg-black text-white border-black shadow-sm' 
-                        : 'bg-gray-100 text-black border-gray-300 hover:bg-gray-200'
+                        ? 'bg-white text-black border-white shadow' 
+                        : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
                     }`}
                   >
                     {size}
@@ -228,38 +210,38 @@ function ProductDetail() {
               </div>
             </div>
 
-            {/* Kotak Upload File Desain (JPG, JPEG, PNG, PDF) */}
-            <div>
-              <label className="block text-xs font-bold text-black uppercase mb-2">
-                File Upload Desain (JPG, JPEG, PNG, PDF) *
+            {/* Kotak Upload File Desain */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-zinc-300 uppercase">
+                Unggah Artwork Desain (PNG Transparan) *
               </label>
-              <div className="border-2 border-dashed border-gray-300 rounded-2xl p-6 text-center bg-gray-50 hover:bg-gray-100 transition relative cursor-pointer">
+              <div className="border-2 border-dashed border-zinc-700 rounded-2xl p-4 text-center bg-zinc-950/60 hover:border-zinc-500 transition relative cursor-pointer">
                 <input
                   type="file"
-                  accept=".jpg,.jpeg,.png,.pdf"
+                  accept="image/*"
                   onChange={handleFileUpload}
                   className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                 />
-                <span className="text-2xl block mb-1">📁</span>
-                <p className="text-xs font-bold text-black">
-                  {uploadedFile ? uploadedFile.name : 'Seret file ke sini atau klik untuk memilih file'}
+                <span className="text-xl block mb-1">📁</span>
+                <p className="text-xs font-bold text-zinc-200">
+                  {uploadedFile ? uploadedFile.name : 'Klik atau seret file desain ke sini'}
                 </p>
-                <span className="text-[10px] text-gray-500 mt-1 block">Mendukung format gambar dan dokumen PDF</span>
+                <span className="text-[10px] text-zinc-500 mt-0.5 block">Desain akan langsung tampil di mockup 3D</span>
               </div>
             </div>
 
             {/* Tombol Aksi Tambah ke Keranjang */}
-            <div className="flex items-center gap-4 pt-2">
+            <div className="flex items-center gap-3 pt-2 border-t border-zinc-800">
               <input
                 type="number"
                 min="1"
                 value={quantity}
                 onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-20 bg-gray-100 border border-gray-300 rounded-xl px-3 py-3.5 text-center text-sm font-bold text-black focus:outline-none focus:ring-2 focus:ring-black"
+                className="w-16 bg-zinc-950 border border-zinc-700 rounded-xl px-2 py-3.5 text-center text-xs font-bold text-white focus:outline-none focus:border-white"
               />
               <button
                 onClick={handleAddToCart}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 px-6 rounded-xl transition text-sm shadow-md text-center uppercase tracking-wider cursor-pointer"
+                className="flex-1 bg-white hover:bg-zinc-200 text-black font-black py-3.5 px-6 rounded-xl transition text-xs shadow-lg text-center uppercase tracking-wider cursor-pointer"
               >
                 🛒 Tambahkan ke Keranjang
               </button>
@@ -275,7 +257,7 @@ function ProductDetail() {
 
 export default function ProductDetailPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-white text-black flex items-center justify-center">Memuat produk...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center text-xs font-bold">Memuat produk...</div>}>
       <ProductDetail />
     </Suspense>
   )

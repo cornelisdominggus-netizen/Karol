@@ -4,124 +4,133 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-type Product = {
-  id: number
-  title: string
-  category: string
-  price: string
-  original_price: string | null
-  image: string | null
+// Alamat halaman studio mockup. Ubah kalau alamat studio kamu berbeda.
+const STUDIO_PATH = '/custom'
+
+// Gambar sementara. Ganti dengan foto sendiri (simpan di folder public/images lalu tulis '/images/nama-file.jpg').
+const HOME_IMAGES = {
+  hero: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=1800&auto=format&fit=crop&q=80',
+  kaos: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=900&auto=format&fit=crop&q=80',
+  oversized: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=900&auto=format&fit=crop&q=80',
+  hoodie: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=900&auto=format&fit=crop&q=80',
+  topi: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=900&auto=format&fit=crop&q=80',
 }
 
-export default function HomePage() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(true)
+const PRODUCTS = [
+  { label: 'Kaos', type: 'kaos', image: HOME_IMAGES.kaos },
+  { label: 'Oversize', type: 'oversized', image: HOME_IMAGES.oversized },
+  { label: 'Hoodie', type: 'hoodie', image: HOME_IMAGES.hoodie },
+  { label: 'Topi', type: 'topi', image: HOME_IMAGES.topi },
+]
+
+export default function Home() {
+  const [siteText, setSiteText] = useState({
+    heroTitle: 'Desain kaosmu. Lihat hasilnya.',
+    footerText: '© 2026 DSCPL WEAR. Depok.'
+  })
+
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false)
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(8)
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAdminLoggedIn(!!data.session)
+    })
 
-      if (!error && data) {
-        setProducts(data as Product[])
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAdminLoggedIn(!!session)
+    })
+
+    const loadTexts = async () => {
+      const { data } = await supabase
+        .from('site_settings')
+        .select('data')
+        .eq('id', 1)
+        .maybeSingle()
+
+      if (data?.data) {
+        const d = data.data as any
+        setSiteText(prev => ({
+          heroTitle: d.heroTitle || prev.heroTitle,
+          footerText: d.footerText || prev.footerText
+        }))
       }
-      setLoading(false)
     }
+    loadTexts()
 
-    fetchProducts()
+    return () => {
+      listener.subscription.unsubscribe()
+    }
   }, [])
 
   return (
-    <main className="min-h-screen bg-white text-black selection:bg-black selection:text-white pb-16">
-      
-      {/* HERO SECTION VISUAL-FIRST (Gaya Grateful Apparel: Bersih & Fokus Produk) */}
-      <section className="px-4 md:px-8 pt-4 md:pt-8 max-w-7xl mx-auto">
-        <div className="rounded-3xl overflow-hidden bg-black text-white relative min-h-[420px] md:min-h-[520px] flex items-end p-6 md:p-12 shadow-xl">
-          <div className="absolute inset-0 opacity-40 bg-[url('https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&q=80&w=1600')] bg-cover bg-center"></div>
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent"></div>
-          
-          <div className="relative z-10 space-y-3 max-w-xl">
-            <span className="bg-red-600 text-white text-[9px] md:text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
-              Custom Apparel & DTF Print
-            </span>
-            <h1 className="text-2xl md:text-4xl font-black tracking-tight leading-tight">
-              PRECISION APPAREL & CUSTOM WORKSHOP.
-            </h1>
-            <p className="text-gray-300 text-xs font-medium leading-relaxed">
-              Wujudkan desain streetwear impianmu di atas bahan standar distro terbaik. Cetak tajam, presisi, dan berkualitas tinggi.
-            </p>
-            <div className="pt-2 flex flex-wrap gap-2.5">
-              <Link href="/products" className="bg-white text-black text-[11px] font-black px-5 py-3 rounded-xl uppercase tracking-wider hover:bg-gray-200 transition">
-                Jelajahi Produk ➔
-              </Link>
-              <Link href="/checkout" className="border border-white/40 text-white text-[11px] font-black px-5 py-3 rounded-xl uppercase tracking-wider hover:bg-white/10 transition">
-                Mulai Custom
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+    <main className="min-h-screen bg-white text-black">
 
-      {/* GRID KATALOG PRODUK */}
-      <section className="px-4 md:px-8 pt-12 max-w-7xl mx-auto space-y-6">
-        <div className="flex justify-between items-end border-b border-gray-200 pb-3">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-red-600">Koleksi Pilihan</p>
-            <h2 className="text-lg md:text-2xl font-black uppercase tracking-tight">Featured Products</h2>
-          </div>
-          <Link href="/products" className="text-xs font-black uppercase tracking-wider hover:underline">
-            Lihat Semua (→)
+      {/* HERO: gambar penuh, teks seminimal mungkin */}
+      <section className="relative w-full h-[80vh] min-h-[480px] overflow-hidden bg-black">
+        <img
+          src={HOME_IMAGES.hero}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover opacity-70"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+        {isAdminLoggedIn && (
+          <Link
+            href="/admin/orders"
+            className="absolute top-4 right-4 z-10 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full transition"
+          >
+            ⚙️ Panel Admin
           </Link>
-        </div>
-
-        {loading ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-            {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="animate-pulse bg-gray-100 rounded-2xl h-56 md:h-64"></div>
-            ))}
-          </div>
-        ) : products.length === 0 ? (
-          <div className="text-center py-16 text-xs font-bold text-gray-400">Belum ada produk di katalog. Silakan tambahkan lewat panel admin.</div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
-            {products.map((p) => (
-              <Link href="/products" key={p.id} className="group space-y-2.5 cursor-pointer">
-                <div className="aspect-square bg-gray-100 rounded-2xl overflow-hidden relative border border-gray-100">
-                  {p.image ? (
-                    <img src={p.image} alt={p.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs font-bold text-gray-400">No Image</div>
-                  )}
-                  <span className="absolute top-2.5 left-2.5 bg-black/80 backdrop-blur-md text-white text-[9px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">
-                    {p.category}
-                  </span>
-                </div>
-                <div className="space-y-0.5">
-                  <h3 className="font-bold text-xs text-black group-hover:text-red-600 transition truncate">{p.title}</h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-red-600">{p.price}</span>
-                    {p.original_price && (
-                      <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>
-                    )}
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
         )}
+
+        <div className="relative z-10 h-full max-w-7xl mx-auto px-4 md:px-8 flex flex-col justify-end pb-12 md:pb-16">
+          <h1 className="text-4xl md:text-7xl font-black tracking-tight text-white max-w-3xl leading-[1.05]">
+            {siteText.heroTitle}
+          </h1>
+          <div className="flex flex-wrap gap-3 mt-6">
+            <Link
+              href={STUDIO_PATH}
+              className="bg-white hover:bg-gray-200 text-black font-black text-xs md:text-sm px-7 py-3.5 rounded-full uppercase tracking-wider transition"
+            >
+              Mulai Desain ➔
+            </Link>
+            <Link
+              href="/products"
+              className="border border-white/70 hover:bg-white hover:text-black text-white font-black text-xs md:text-sm px-7 py-3.5 rounded-full uppercase tracking-wider transition"
+            >
+              Katalog
+            </Link>
+          </div>
+        </div>
       </section>
 
-      {/* FOOTER */}
-      <footer className="border-t border-gray-100 mt-16 px-4 md:px-8 max-w-7xl mx-auto pt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-bold text-gray-500 text-center md:text-left">
-        <p>© 2026 DSCPL WEAR. All rights reserved.</p>
-        <div className="flex gap-6 uppercase tracking-wider">
-          <Link href="/products" className="hover:text-black">Katalog</Link>
-          <Link href="/track" className="hover:text-black">Lacak Pesanan</Link>
-          <Link href="/admin/login" className="hover:text-black">Admin Panel</Link>
+      {/* PILIH PRODUK: klik langsung membuka studio dengan jenis itu terpilih */}
+      <section className="max-w-7xl mx-auto px-4 md:px-8 py-10 md:py-14">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-5">
+          {PRODUCTS.map((p) => (
+            <Link
+              key={p.type}
+              href={`${STUDIO_PATH}?type=${p.type}`}
+              className="group relative block aspect-[3/4] overflow-hidden rounded-2xl md:rounded-3xl bg-gray-100"
+            >
+              <img
+                src={p.image}
+                alt={p.label}
+                loading="lazy"
+                className="w-full h-full object-cover transition duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+              <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 flex items-center justify-between">
+                <span className="text-white font-black text-lg md:text-2xl uppercase tracking-wide">{p.label}</span>
+                <span className="text-white text-xl transition group-hover:translate-x-1">➔</span>
+              </div>
+            </Link>
+          ))}
         </div>
+      </section>
+
+      <footer className="py-8 text-center text-[11px] text-gray-500 font-semibold border-t border-gray-100">
+        {siteText.footerText}
       </footer>
 
     </main>

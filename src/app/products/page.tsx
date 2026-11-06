@@ -113,7 +113,6 @@ function ProductsContent() {
     { name: 'Polosan', value: 'Polosan' }
   ]
 
-  // Kirim ulasan (disimpan di database, terlihat oleh semua pengunjung)
   const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newName.trim() || !newComment.trim()) return
@@ -147,7 +146,6 @@ function ProductsContent() {
     alert('Terima kasih! Ulasan Anda berhasil ditambahkan.')
   }
 
-  // Hapus ulasan: hanya admin yang sudah login yang diizinkan database
   const handleDeleteReview = async (id: number) => {
     if (!confirm('Hapus ulasan ini?')) return
 
@@ -248,48 +246,60 @@ function ProductsContent() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredProducts.map((prod) => (
-                    <div
-                      key={prod.id}
-                      onClick={() => router.push(`/products/detail/${prod.id}`)}
-                      className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between group cursor-pointer"
-                    >
-                      <div className="relative h-64 bg-gray-100 overflow-hidden">
-                        <span className="absolute top-3 left-3 bg-black text-white text-[10px] font-bold px-3 py-1 rounded-full z-10 uppercase">
-                          {prod.category}
-                        </span>
-                        {prod.image && (
-                          <img
-                            src={prod.image}
-                            alt={prod.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                          />
-                        )}
-                      </div>
+                  {filteredProducts.map((prod) => {
+                    // Deteksi otomatis tipe apparel untuk 3D Custom Studio
+                    let apparelType = 'kaos'
+                    const cat = prod.category?.toLowerCase() || ''
+                    const title = prod.title?.toLowerCase() || ''
+                    
+                    if (cat.includes('hoodie') || title.includes('hoodie')) apparelType = 'hoodie'
+                    else if (cat.includes('topi') || title.includes('topi')) apparelType = 'topi'
+                    else if (cat.includes('tas') || title.includes('tas')) apparelType = 'tas'
+                    else if (cat.includes('oversize') || title.includes('oversize')) apparelType = 'oversized'
 
-                      <div className="p-5 flex flex-col flex-1 justify-between space-y-4">
-                        <div>
-                          <h4 className="font-bold text-xs text-black line-clamp-2 group-hover:underline">{prod.title}</h4>
+                    return (
+                      <div
+                        key={prod.id}
+                        onClick={() => router.push(`/custom?type=${apparelType}`)}
+                        className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition flex flex-col justify-between group cursor-pointer"
+                      >
+                        <div className="relative h-64 bg-gray-100 overflow-hidden">
+                          <span className="absolute top-3 left-3 bg-black text-white text-[10px] font-bold px-3 py-1 rounded-full z-10 uppercase">
+                            {prod.category}
+                          </span>
+                          {prod.image && (
+                            <img
+                              src={prod.image}
+                              alt={prod.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                            />
+                          )}
                         </div>
 
-                        <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                        <div className="p-5 flex flex-col flex-1 justify-between space-y-4">
                           <div>
-                            <span className="text-[10px] text-gray-400 line-through block">{prod.originalPrice}</span>
-                            <span className="text-sm font-black text-red-600">{prod.price}</span>
+                            <h4 className="font-bold text-xs text-black line-clamp-2 group-hover:underline">{prod.title}</h4>
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              router.push(`/products/detail/${prod.id}`)
-                            }}
-                            className="bg-black text-white text-xs font-bold px-4 py-2 rounded-xl uppercase tracking-wider hover:bg-gray-800 transition cursor-pointer"
-                          >
-                            Pesan
-                          </button>
+
+                          <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                            <div>
+                              <span className="text-[10px] text-gray-400 line-through block">{prod.originalPrice}</span>
+                              <span className="text-sm font-black text-red-600">{prod.price}</span>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                router.push(`/custom?type=${apparelType}`)
+                              }}
+                              className="bg-black text-white text-xs font-bold px-4 py-2 rounded-xl uppercase tracking-wider hover:bg-gray-800 transition cursor-pointer"
+                            >
+                              Custom 3D
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -307,7 +317,6 @@ function ProductsContent() {
                 )}
               </div>
 
-              {/* List Testimoni */}
               <div className="space-y-4">
                 {reviews.map((rev) => (
                   <div key={rev.id} className="bg-gray-50 p-4 rounded-2xl border border-gray-100 flex justify-between items-start gap-4">
@@ -320,7 +329,6 @@ function ProductsContent() {
                       <p className="text-xs text-gray-700 font-medium">{rev.comment}</p>
                     </div>
 
-                    {/* Tombol Hapus: hanya tampil untuk admin yang sudah login */}
                     {isAdmin && (
                       <button
                         onClick={() => handleDeleteReview(rev.id)}
@@ -334,7 +342,6 @@ function ProductsContent() {
                 ))}
               </div>
 
-              {/* Form Tulis Ulasan Baru */}
               <form onSubmit={handleAddReview} className="space-y-3 pt-4 border-t">
                 <h4 className="text-xs font-bold uppercase text-black">Tulis Ulasan Anda</h4>
                 <input
