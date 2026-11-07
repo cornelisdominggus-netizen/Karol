@@ -9,14 +9,19 @@ export default function CheckoutPage() {
   const router = useRouter()
   const [cart, setCart] = useState<any[]>([])
   
-  // Form Tagihan & File Desain
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [province, setProvince] = useState('Jawa Barat')
   const [city, setCity] = useState('Depok')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
-  const [designFile, setDesignFile] = useState<File | null>(null) // State untuk file desain
+
+  // State untuk 4 berkas terpisah
+  const [designFront, setDesignFront] = useState<File | null>(null)
+  const [designBack, setDesignBack] = useState<File | null>(null)
+  const [mockupFront, setMockupFront] = useState<File | null>(null)
+  const [mockupBack, setMockupBack] = useState<File | null>(null)
+
   const [agree, setAgree] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -60,6 +65,22 @@ export default function CheckoutPage() {
   const shippingCost = cart.length > 0 ? 15000 : 0
   const totalNum = subtotalNum + shippingCost
 
+  // Helper untuk upload file ke Supabase Storage
+  const uploadToStorage = async (file: File | null, folderPrefix: string) => {
+    if (!file) return 'Tidak ada'
+    const ext = file.name.split('.').pop()
+    const fileName = `${folderPrefix}_${Date.now()}_${Math.random().toString(36).substring(2)}.${ext}`
+    
+    const { error } = await supabase.storage.from('designs').upload(fileName, file)
+    if (error) {
+      console.error(`Gagal upload ${folderPrefix}:`, error.message)
+      return 'Gagal upload'
+    }
+
+    const { data } = supabase.storage.from('designs').getPublicUrl(fileName)
+    return data?.publicUrl || 'Gagal ambil URL'
+  }
+
   const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault()
     if (cart.length === 0) {
@@ -74,37 +95,20 @@ export default function CheckoutPage() {
     setLoading(true)
 
     try {
-      let filePublicUrl = 'Tanpa file'
+      // Unggah 4 berkas ke Supabase Storage secara paralel
+      const [urlDesignFront, urlDesignBack, urlMockupFront, urlMockupBack] = await Promise.all([
+        uploadToStorage(designFront, 'desain_depan'),
+        uploadToStorage(designBack, 'desain_belakang'),
+        uploadToStorage(mockupFront, 'mockup_depan'),
+        uploadToStorage(mockupBack, 'mockup_belakang'),
+      ])
 
-      // Jika pembeli melampirkan file, upload ke Supabase Storage bucket 'designs'
-      if (designFile) {
-        const fileExt = designFile.name.split('.').pop()
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
-        
-        const { error: uploadError } = await supabase.storage
-          .from('designs') // Menggunakan bucket 'designs' yang ada di Supabase kamu
-          .upload(fileName, designFile)
-
-        if (uploadError) {
-          console.error('Supabase Storage Error:', uploadError.message)
-          alert('Gagal mengunggah file desain: ' + uploadError.message)
-          setLoading(false)
-          return
-        }
-
-        // Ambil URL publik file
-        const { data: publicURLData } = supabase.storage
-          .from('designs')
-          .getPublicUrl(fileName)
-
-        filePublicUrl = publicURLData.publicUrl
-      }
-
-      // Rangkuman item pesanan
-      const itemsSummary = cart.map(i => `${i.title} (${i.size}) x${i.quantity}`).join(', ')
+      const itemsSummary = cart.map(i => `${i.title} (Ukuran: ${i.size}) x${i.quantity}`).join(' | ')
       const totalPriceStr = 'Rp ' + totalNum.toLocaleString('id-ID')
 
-      // Simpan data pesanan ke database Supabase tabel 'orders'
+      // Susun ringkasan file lengkap untuk database
+      const fullFilesInfo = `[Desain Depan: ${urlDesignFront}] | [Desain Belakang: ${urlDesignBack}] | [Mockup 3D Depan: ${urlMockupFront}] | [Mockup 3D Belakang: ${urlMockupBack}]`
+
       const { error } = await supabase
         .from('orders')
         .insert([
@@ -112,7 +116,7 @@ export default function CheckoutPage() {
             customer_name: name || 'Pelanggan DSCPL',
             phone: phone || '-',
             address: `${address}, ${city}, ${province}`,
-            items: `${itemsSummary} | File Desain: ${filePublicUrl}`,
+            items: `${itemsSummary} || ${fullFilesInfo}`,
             total_price: totalPriceStr,
             status: 'Pending'
           }
@@ -125,18 +129,17 @@ export default function CheckoutPage() {
         return
       }
 
-      // Kosongkan keranjang setelah berhasil
       localStorage.removeItem('dscpl_cart')
       setCart([])
       window.dispatchEvent(new Event('dscpl_cart_updated'))
 
-      // Format pesan WhatsApp Admin dengan menyertakan link file desain
+      // Format pesan WhatsApp Admin dengan menyertakan ke-4 tautan berkas
       const adminWhatsAppNumber = '6285697211657' 
-      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A*Link File Desain*: ${filePublicUrl}%0A*Total Pembayaran*: ${totalPriceStr}`
+      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A%0A*BERKAS & MOCKUP 3D*:%0A- Desain Depan: ${urlDesignFront}%0A- Desain Belakang: ${urlDesignBack}%0A- Mockup 3D Depan: ${urlMockupFront}%0A- Mockup 3D Belakang: ${urlMockupBack}%0A%0A*Total Pembayaran*: ${totalPriceStr}`
 
       window.open(`https://wa.me/${adminWhatsAppNumber}?text=${waMessage}`, '_blank')
 
-      alert('Pesanan & file desain berhasil dibuat!')
+      alert('Pesanan & seluruh berkas mockup berhasil dikirim!')
       router.replace('/')
 
     } catch (err: any) {
@@ -148,169 +151,211 @@ export default function CheckoutPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 py-10 px-4 md:px-8">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <main className="min-h-screen bg-white text-black py-10 px-4 md:px-8">
+      <div className="max-w-7xl mx-auto space-y-10">
         
-        {/* Banner Login Cepat */}
-        <div className="bg-black text-white p-4 rounded-2xl flex justify-between items-center text-xs font-bold">
-          <span>Masuk untuk kemudahan checkout & pengumpulan koin reward.</span>
-          <Link href="/admin/login" className="bg-white text-black px-4 py-2 rounded-xl">Login dengan Google / Admin</Link>
+        <div className="border-b border-zinc-200 pb-6">
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] text-red-600 block mb-1">
+            SECURE CHECKOUT & UPLOAD STUDIO
+          </span>
+          <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight text-zinc-950">
+            Penyelesaian Pesanan & Berkas
+          </h1>
         </div>
 
-        {/* 3 Kolom Utama */}
-        <form onSubmit={handleCreateOrder} className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        <form onSubmit={handleCreateOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* KOLOM 1: DETAIL TAGIHAN & UPLOAD FILE */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-            <div className="border-b pb-3">
-              <h2 className="text-sm font-black uppercase tracking-wider text-red-600">1. DETAIL TAGIHAN</h2>
+          {/* KOLOM KIRI: FORM PENGIRIMAN & 4 INPUT FILE */}
+          <div className="lg:col-span-7 bg-zinc-50/70 p-6 md:p-8 rounded-3xl shadow-sm border border-zinc-200/80 space-y-6">
+            <div className="border-b border-zinc-200 pb-3">
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
+                1. Informasi Pengiriman & Berkas Desain (Depan & Belakang)
+              </h2>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-4 text-xs">
               <div>
-                <label className="block font-black text-black mb-1">Nama Lengkap *</label>
+                <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Nama Lengkap *</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Masukkan nama lengkap"
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black focus:outline-none placeholder:text-gray-400"
+                  className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm"
                   required
                 />
               </div>
 
-              <div>
-                <label className="block font-black text-black mb-1">Negara</label>
-                <select className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black">
-                  <option>Indonesia</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Nomor WhatsApp *</label>
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="08123456789"
+                    className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="email@domain.com"
+                    className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block font-black text-black mb-1">Alamat Lengkap *</label>
+                <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Alamat Lengkap *</label>
                 <textarea
                   rows={2}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="Nama jalan, nomor rumah, RT/RW..."
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black focus:outline-none placeholder:text-gray-400"
+                  className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition resize-none shadow-sm"
                   required
                 ></textarea>
               </div>
 
-              <div>
-                <label className="block font-black text-black mb-1">Provinsi</label>
-                <select
-                  value={province}
-                  onChange={(e) => setProvince(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black"
-                >
-                  <option value="Jawa Barat">Jawa Barat</option>
-                  <option value="DKI Jakarta">DKI Jakarta</option>
-                  <option value="Banten">Banten</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Provinsi</label>
+                  <select
+                    value={province}
+                    onChange={(e) => setProvince(e.target.value)}
+                    className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm"
+                  >
+                    <option value="Jawa Barat">Jawa Barat</option>
+                    <option value="DKI Jakarta">DKI Jakarta</option>
+                    <option value="Banten">Banten</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Kota / Kecamatan *</label>
+                  <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Contoh: Depok"
+                    className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm"
+                    required
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block font-black text-black mb-1">Kota / Kecamatan *</label>
+              {/* 4 INPUT BERKAS TERPISAH */}
+              <div className="pt-4 border-t border-zinc-200 space-y-3">
+                <span className="block font-black text-red-600 uppercase tracking-wider text-[11px]">
+                  📁 Unggah 4 Berkas Studio (Desain & Mockup 3D)
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="bg-white p-3 rounded-2xl border border-zinc-200 space-y-1">
+                    <label className="block text-[10px] font-black text-zinc-700">1. File Desain Sisi Depan</label>
+                    <input
+                      type="file"
+                      onChange={(e) => setDesignFront(e.target.files?.[0] || null)}
+                      className="w-full text-[10px] text-zinc-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-zinc-900 file:text-white"
+                    />
+                  </div>
+
+                  <div className="bg-white p-3 rounded-2xl border border-zinc-200 space-y-1">
+                    <label className="block text-[10px] font-black text-zinc-700">2. File Desain Sisi Belakang</label>
+                    <input
+                      type="file"
+                      onChange={(e) => setDesignBack(e.target.files?.[0] || null)}
+                      className="w-full text-[10px] text-zinc-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-zinc-900 file:text-white"
+                    />
+                  </div>
+
+                  <div className="bg-white p-3 rounded-2xl border border-zinc-200 space-y-1">
+                    <label className="block text-[10px] font-black text-zinc-700">3. Mockup 3D Sisi Depan</label>
+                    <input
+                      type="file"
+                      onChange={(e) => setMockupFront(e.target.files?.[0] || null)}
+                      className="w-full text-[10px] text-zinc-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-zinc-900 file:text-white"
+                    />
+                  </div>
+
+                  <div className="bg-white p-3 rounded-2xl border border-zinc-200 space-y-1">
+                    <label className="block text-[10px] font-black text-zinc-700">4. Mockup 3D Sisi Belakang</label>
+                    <input
+                      type="file"
+                      onChange={(e) => setMockupBack(e.target.files?.[0] || null)}
+                      className="w-full text-[10px] text-zinc-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-zinc-900 file:text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="space-y-4 pt-4 border-t border-zinc-200">
+              <div className="flex items-start gap-3">
                 <input
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Contoh: Depok / Pancoran Mas"
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black focus:outline-none placeholder:text-gray-400"
+                  type="checkbox"
+                  id="terms"
+                  checked={agree}
+                  onChange={(e) => setAgree(e.target.checked)}
+                  className="mt-1 cursor-pointer w-4 h-4 accent-black"
                   required
                 />
+                <label htmlFor="terms" className="text-zinc-700 font-bold cursor-pointer text-xs leading-relaxed">
+                  Saya memastikan seluruh berkas desain & mockup 3D sudah benar dan setuju dengan ketentuan toko *
+                </label>
               </div>
 
-              <div>
-                <label className="block font-black text-black mb-1">Nomor WhatsApp *</label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="08123456789"
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black focus:outline-none placeholder:text-gray-400"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block font-black text-black mb-1">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="email@domain.com"
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2.5 font-bold text-black focus:outline-none placeholder:text-gray-400"
-                />
-              </div>
-
-              {/* INPUT UPLOAD FILE DESAIN */}
-              <div className="pt-2 border-t space-y-1">
-                <label className="block font-black text-red-600 mb-1">📁 Unggah File Desain / Mockup</label>
-                <input
-                  type="file"
-                  onChange={(e) => setDesignFile(e.target.files?.[0] || null)}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl p-2 text-xs font-bold text-black file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-black file:bg-black file:text-white hover:file:cursor-pointer"
-                />
-                <p className="text-[10px] text-gray-500 font-medium">Format: PNG, JPEG, PDF (Maks. 10MB)</p>
-              </div>
-
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-black hover:bg-zinc-800 text-white font-black py-4 px-6 rounded-2xl uppercase tracking-widest transition shadow-lg cursor-pointer text-center text-xs disabled:opacity-50"
+              >
+                {loading ? 'MENGUNGGAH 4 BERKAS & MEMPROSES...' : 'BUAT PESANAN & KIRIM KE WHATSAPP ➔'}
+              </button>
             </div>
           </div>
 
-          {/* KOLOM 2: RINGKASAN PESANAN */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-            <div className="border-b pb-3">
-              <h2 className="text-sm font-black uppercase tracking-wider text-red-600">2. PESANAN ANDA</h2>
+          {/* KOLOM KANAN: RINGKASAN & PREVIEW KERANJANG */}
+          <div className="lg:col-span-5 bg-zinc-50/70 p-6 md:p-8 rounded-3xl shadow-sm border border-zinc-200/80 space-y-6">
+            <div className="border-b border-zinc-200 pb-3">
+              <h2 className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
+                2. Ringkasan Keranjang Belanja
+              </h2>
             </div>
 
-            <div className="space-y-3">
-              <div className="grid grid-cols-12 text-[11px] font-black text-gray-700 uppercase border-b pb-2">
-                <span className="col-span-5">PRODUK</span>
-                <span className="col-span-3 text-center">JUMLAH</span>
-                <span className="col-span-3 text-right">TOTAL</span>
-                <span className="col-span-1 text-center">HAPUS</span>
-              </div>
-
+            <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
               {cart.length === 0 ? (
-                <div className="text-center py-10 space-y-2">
-                  <span className="text-3xl">🛒</span>
-                  <p className="text-xs text-black font-bold">Keranjang Anda kosong.</p>
-                  <Link href="/products" className="inline-block mt-2 bg-black text-white text-xs font-bold px-4 py-2 rounded-xl">
+                <div className="text-center py-12 space-y-3">
+                  <span className="text-4xl">🛒</span>
+                  <p className="text-xs text-zinc-800 font-bold">Keranjang Anda kosong.</p>
+                  <Link href="/products" className="inline-block mt-2 bg-black text-white text-xs font-black px-5 py-2.5 rounded-xl uppercase tracking-wider">
                     Pilih Produk
                   </Link>
                 </div>
               ) : (
                 cart.map((item) => (
-                  <div key={item.cartId} className="grid grid-cols-12 items-center text-xs border-b pb-3 gap-1">
-                    <div className="col-span-5 flex items-center gap-2">
-                      <img src={item.image} alt="" className="w-10 h-10 object-cover rounded-lg bg-gray-100 flex-shrink-0" />
+                  <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-zinc-200/80 space-y-3 shadow-sm">
+                    <div className="flex items-center justify-between gap-3 border-b border-zinc-100 pb-3">
                       <div className="min-w-0">
-                        <h4 className="font-bold text-black truncate">{item.title}</h4>
-                        <p className="text-[10px] text-gray-600 font-semibold">Ukuran: {item.size}</p>
+                        <h4 className="font-black text-xs text-zinc-900 truncate">{item.title}</h4>
+                        <p className="text-[10px] text-zinc-500 font-semibold">Ukuran: {item.size} • Qty: {item.quantity}</p>
                       </div>
+                      <span className="font-black text-xs text-red-600 flex-shrink-0">{item.price}</span>
                     </div>
 
-                    <div className="col-span-3 flex items-center justify-center border border-gray-300 rounded-lg overflow-hidden bg-gray-50">
-                      <button type="button" onClick={() => handleQuantityChange(item.cartId, -1)} className="px-2 py-1 font-bold hover:bg-gray-200">-</button>
-                      <span className="px-2 font-black text-black">{item.quantity || 1}</span>
-                      <button type="button" onClick={() => handleQuantityChange(item.cartId, 1)} className="px-2 py-1 font-bold hover:bg-gray-200">+</button>
-                    </div>
-
-                    <div className="col-span-3 text-right font-black text-red-600 truncate">
-                      Rp {((parseInt(item.price.replace(/[^0-9]/g, '')) || 0) * (item.quantity || 1)).toLocaleString('id-ID')}
-                    </div>
-
-                    <div className="col-span-1 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveItem(item.cartId)}
-                        className="text-red-600 hover:text-red-800 font-black p-1 text-sm rounded-lg hover:bg-red-50 transition"
-                        title="Hapus item"
-                      >
-                        ✕
+                    <div className="flex items-center justify-between pt-2 border-t border-zinc-100 text-xs">
+                      <div className="flex items-center border border-zinc-300 rounded-xl overflow-hidden bg-zinc-50">
+                        <button type="button" onClick={() => handleQuantityChange(item.cartId, -1)} className="px-2.5 py-1 font-bold hover:bg-zinc-200">-</button>
+                        <span className="px-2 font-black text-black">{item.quantity || 1}</span>
+                        <button type="button" onClick={() => handleQuantityChange(item.cartId, 1)} className="px-2.5 py-1 font-bold hover:bg-zinc-200">+</button>
+                      </div>
+                      <button type="button" onClick={() => handleRemoveItem(item.cartId)} className="text-red-500 hover:text-red-700 font-bold text-[11px]">
+                        Hapus Item
                       </button>
                     </div>
                   </div>
@@ -318,62 +363,23 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            <div className="space-y-2 pt-3 text-xs border-t">
-              <div className="flex justify-between font-black text-black">
-                <span>Subtotal</span>
-                <span>Rp {subtotalNum.toLocaleString('id-ID')}</span>
+            <div className="space-y-2.5 pt-3 text-xs border-t border-zinc-200">
+              <div className="flex justify-between font-bold text-zinc-600">
+                <span>Subtotal Produk</span>
+                <span className="text-zinc-900 font-bold">Rp {subtotalNum.toLocaleString('id-ID')}</span>
               </div>
-              <div className="flex justify-between font-black text-black">
-                <span>Pengiriman (Depok & Sekitarnya)</span>
-                <span>Rp {shippingCost.toLocaleString('id-ID')}</span>
+              <div className="flex justify-between font-bold text-zinc-600">
+                <span>Pengiriman</span>
+                <span className="text-zinc-900 font-bold">Rp {shippingCost.toLocaleString('id-ID')}</span>
               </div>
-              <div className="flex justify-between font-black text-sm pt-2 border-t">
-                <span className="text-black">Total</span>
-                <span className="text-red-600">Rp {totalNum.toLocaleString('id-ID')}</span>
+              <div className="flex justify-between font-black text-sm pt-3 border-t border-zinc-200">
+                <span className="text-zinc-950">Total Pembayaran</span>
+                <span className="text-red-600 text-base">Rp {totalNum.toLocaleString('id-ID')}</span>
               </div>
-            </div>
-          </div>
-
-          {/* KOLOM 3: PEMBAYARAN */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-            <div className="border-b pb-3">
-              <h2 className="text-sm font-black uppercase tracking-wider text-red-600">3. PEMBAYARAN & KONFIRMASI</h2>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="bg-blue-50 p-4 rounded-2xl border border-blue-200 space-y-2">
-                <p className="font-black text-blue-900">💬 Otomatis Kirim File Desain</p>
-                <p className="text-blue-800 font-medium leading-relaxed">
-                  File desain yang Anda unggah akan otomatis disimpan ke database, dan link unduhannya langsung disertakan ke WhatsApp admin.
-                </p>
-              </div>
-
-              <div className="flex items-start gap-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="terms"
-                  checked={agree}
-                  onChange={(e) => setAgree(e.target.checked)}
-                  className="mt-1 cursor-pointer"
-                  required
-                />
-                <label htmlFor="terms" className="text-black font-bold cursor-pointer">
-                  Saya sudah membaca dan setuju dengan syarat & ketentuan toko *
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-black py-3.5 rounded-xl uppercase tracking-wider transition shadow-md cursor-pointer text-center text-xs"
-              >
-                {loading ? 'MENGUNGGAH & MEMPROSES...' : 'BUAT PESANAN & KIRIM KE WHATSAPP ➔'}
-              </button>
             </div>
           </div>
 
         </form>
-
       </div>
     </main>
   )

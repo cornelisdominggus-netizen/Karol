@@ -43,11 +43,11 @@ export default function Home() {
     fetchData()
   }, [])
 
-  // Kategori Utama dengan Desain Ramping & Slim
+  // Kategori Utama dengan Desain Ramping & Slim (Diubah langsung menuju katalog produk kategori)
   const categories = [
     {
       name: 'Kaos',
-      type: 'kaos',
+      categoryValue: 'Custom Kaos',
       icon: (
         <svg className="w-5 h-5 text-zinc-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20.38 3.46L16 2a4 4 0 01-8 0L3.62 3.46a2 2 0 00-1.34 2.23l.58 3.47a1 1 0 00.99.84H5v10a2 2 0 002 2h10a2 2 0 002-2V10h1.15a1 1 0 00.99-.84l.58-3.47a2 2 0 00-1.34-2.23z" />
@@ -56,7 +56,7 @@ export default function Home() {
     },
     {
       name: 'Oversized',
-      type: 'oversized',
+      categoryValue: 'Custom Oversized',
       icon: (
         <svg className="w-5 h-5 text-zinc-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 4l-4-1.5a5 5 0 00-10 0L3 4l-.8 4.2a1 1 0 00.8 1.2H5v10.6a1 1 0 001 1h12a1 1 0 001-1V9.4h2a1 1 0 00.8-1.2L21 4z" />
@@ -65,7 +65,7 @@ export default function Home() {
     },
     {
       name: 'Hoodie',
-      type: 'hoodie',
+      categoryValue: 'Custom Hoodie',
       icon: (
         <svg className="w-5 h-5 text-zinc-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 2a4 4 0 00-4 4v1H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-2V6a4 4 0 00-4-4z" />
@@ -74,7 +74,7 @@ export default function Home() {
     },
     {
       name: 'Topi',
-      type: 'topi',
+      categoryValue: 'Custom Topi',
       icon: (
         <svg className="w-5 h-5 text-zinc-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M19 13H5a2 2 0 01-2-2v-1a6 6 0 0112 0v1h4a1 1 0 011 1v1a1 1 0 01-1 1z" />
@@ -132,7 +132,7 @@ export default function Home() {
           {categories.map((cat, idx) => (
             <div
               key={idx}
-              onClick={() => router.push(`/custom?type=${cat.type}`)}
+              onClick={() => router.push(`/products?category=${encodeURIComponent(cat.categoryValue)}`)}
               className="group bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/80 hover:border-black rounded-2xl py-3.5 px-4 flex items-center justify-between cursor-pointer transition-all duration-300 shadow-sm"
             >
               <div className="flex items-center gap-3">

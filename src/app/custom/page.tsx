@@ -42,7 +42,6 @@ function CustomStudio() {
   const [productTitle, setProductTitle] = useState<string>('Custom Apparel')
   const [unitPrice, setUnitPrice] = useState<number>(95000)
 
-  // State untuk list katalog produk berdasarkan kategori yang dipilih
   const [catalogProducts, setCatalogProducts] = useState<any[]>([])
   const [selectedCatalogId, setSelectedCatalogId] = useState<string>(productIdParam || '')
 
@@ -53,12 +52,21 @@ function CustomStudio() {
   const [quantity, setQuantity] = useState<number>(1)
   const [loading, setLoading] = useState<boolean>(false)
 
+  const downloadTriggerRef = useRef<(() => void) | null>(null)
+
   const fileInputRefs = {
     front: useRef<HTMLInputElement>(null),
     back: useRef<HTMLInputElement>(null),
   }
 
-  // Ambil list produk dari Supabase berdasarkan jenis pakaian yang aktif
+  useEffect(() => {
+    if (typeParam && APPAREL_TYPES.includes(typeParam as ApparelType)) {
+      if (typeParam !== selectedType) {
+        setSelectedType(typeParam as ApparelType)
+      }
+    }
+  }, [typeParam])
+
   useEffect(() => {
     const fetchCatalogByCategory = async () => {
       let categoryKeyword = 'Kaos'
@@ -72,61 +80,36 @@ function CustomStudio() {
         .ilike('category', `%${categoryKeyword}%`)
         .order('created_at', { ascending: false })
 
-      if (data && !error) {
+      if (data && !error && data.length > 0) {
         setCatalogProducts(data)
+        const matchCurrent = data.find((p: any) => String(p.id) === productIdParam)
+        if (matchCurrent) {
+          setSelectedCatalogId(String(matchCurrent.id))
+          setProductTitle(matchCurrent.title)
+          const parsedPrice = parseInt(String(matchCurrent.price).replace(/[^0-9]/g, ''))
+          if (parsedPrice > 0) setUnitPrice(parsedPrice)
+        } else {
+          const firstProd = data[0]
+          setSelectedCatalogId(String(firstProd.id))
+          setProductTitle(firstProd.title)
+          const parsedPrice = parseInt(String(firstProd.price).replace(/[^0-9]/g, ''))
+          if (parsedPrice > 0) setUnitPrice(parsedPrice)
+        }
       } else {
         setCatalogProducts([])
       }
     }
 
     fetchCatalogByCategory()
-  }, [selectedType])
-
-  // Ambil detail produk jika ada ID di URL
-  useEffect(() => {
-    const fetchProductDetails = async () => {
-      if (productIdParam) {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('id', productIdParam)
-          .maybeSingle()
-
-        if (data && !error) {
-          setProductTitle(data.title)
-          const parsedPrice = parseInt(data.price.replace(/[^0-9]/g, ''))
-          if (parsedPrice > 0) setUnitPrice(parsedPrice)
-          setSelectedCatalogId(String(data.id))
-        }
-      } else {
-        const defaultPrices: Record<ApparelType, number> = {
-          kaos: 95000,
-          oversized: 120000,
-          hoodie: 220000,
-          topi: 75000,
-        }
-        setUnitPrice(defaultPrices[selectedType])
-        setProductTitle(`Custom ${selectedType.toUpperCase()}`)
-      }
-    }
-
-    fetchProductDetails()
-  }, [productIdParam, selectedType])
+  }, [selectedType, productIdParam])
 
   const updateSide = (side: Side, patch: Partial<SideDesign>) => {
     setDesigns((d) => ({ ...d, [side]: { ...d[side], ...patch } }))
   }
 
-  useEffect(() => {
-    if (typeParam && APPAREL_TYPES.includes(typeParam as ApparelType)) {
-      setSelectedType(typeParam as ApparelType)
-    }
-  }, [typeParam])
-
-  // Saat tombol jenis pakaian diklik
   const handleTypeChange = (type: ApparelType) => {
+    if (type === selectedType) return
     setSelectedType(type)
-    setSelectedCatalogId('')
     
     const defaultPrices: Record<ApparelType, number> = {
       kaos: 95000,
@@ -140,7 +123,6 @@ function CustomStudio() {
     router.replace(`/custom?type=${type}`, { scroll: false })
   }
 
-  // Saat pengguna memilih produk spesifik dari list katalog
   const handleSelectCatalogProduct = (prod: any) => {
     setSelectedCatalogId(String(prod.id))
     setProductTitle(prod.title)
@@ -177,20 +159,14 @@ function CustomStudio() {
   const totalPrice = unitPrice * quantity
 
   const handleDownload3DPreview = () => {
-    const canvasElement = document.querySelector('canvas')
-    if (!canvasElement) {
+    if (downloadTriggerRef.current) {
+      downloadTriggerRef.current()
+    } else {
       alert('Canvas 3D belum siap dimuat.')
-      return
     }
-    const dataUrl = canvasElement.toDataURL('image/png')
-    const link = document.createElement('a')
-    link.href = dataUrl
-    link.download = `preview-3d-${selectedType}-${activeSide}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
   }
 
+  // FUNGSI SIMPAN KE KERANJANG ANTI-QUOTA EXCEEDED
   const handleAddToCart = async () => {
     if (!designs.front.image && !designs.back.image) {
       alert('Harap unggah minimal satu desain sablon (depan atau belakang) terlebih dahulu!')
@@ -199,62 +175,48 @@ function CustomStudio() {
 
     setLoading(true)
 
-    let finalPreviewImage = designs.front.image ?? designs.back.image
-
-    const canvasElement = document.querySelector('canvas')
-    if (canvasElement) {
-      try {
-        const dataUrl = canvasElement.toDataURL('image/png')
-        const res = await fetch(dataUrl)
-        const blob = await res.blob()
-        const fileName = `mockup_3d_${Date.now()}.png`
-
-        const { error: uploadError } = await supabase.storage
-          .from('designs')
-          .upload(fileName, blob, { contentType: 'image/png' })
-
-        if (!uploadError) {
-          const { data: pubData } = supabase.storage
-            .from('designs')
-            .getPublicUrl(fileName)
-          
-          if (pubData?.publicUrl) {
-            finalPreviewImage = pubData.publicUrl
-          }
-        }
-      } catch (err) {
-        console.error('Gagal merender canvas 3D:', err)
-      }
-    }
-
-    const files = SIDES.filter((s) => designs[s].name).map((s) => `${SIDE_LABEL[s]}: ${designs[s].name}`)
-
-    const newItem = {
-      cartId: Date.now(),
-      id: Date.now(),
-      title: productTitle,
-      price: 'Rp ' + totalPrice.toLocaleString('id-ID'),
-      size: size,
-      quantity: quantity,
-      image: finalPreviewImage,
-      imageFront: designs.front.image,
-      imageBack: designs.back.image,
-      designFile: files.join(' | '),
-    }
-
     try {
-      const existingCart = JSON.parse(localStorage.getItem('dscpl_cart') || '[]')
-      localStorage.setItem('dscpl_cart', JSON.stringify([...existingCart, newItem]))
-    } catch {
+      const filesDesc = SIDES.filter((s) => designs[s].name).map((s) => `${SIDE_LABEL[s]}: ${designs[s].name}`).join(' | ')
+
+      const newItem = {
+        cartId: Date.now(),
+        id: Date.now(),
+        title: productTitle,
+        price: 'Rp ' + totalPrice.toLocaleString('id-ID'),
+        size: size,
+        quantity: quantity,
+        image: 'Custom 3D Apparel',
+        imageFront: designs.front.name ? `Desain Depan: ${designs.front.name}` : null,
+        imageBack: designs.back.name ? `Desain Belakang: ${designs.back.name}` : null,
+        designFile: filesDesc,
+      }
+
+      let existingCart = []
+      try {
+        existingCart = JSON.parse(localStorage.getItem('dscpl_cart') || '[]')
+      } catch (e) {
+        existingCart = []
+      }
+
+      const updatedCart = [...existingCart, newItem]
+
+      try {
+        localStorage.setItem('dscpl_cart', JSON.stringify(updatedCart))
+      } catch (storageError) {
+        // Jika storage penuh, reset dan simpan item terbaru saja
+        localStorage.setItem('dscpl_cart', JSON.stringify([newItem]))
+      }
+
+      window.dispatchEvent(new Event('dscpl_cart_updated'))
+
+      setLoading(false)
+      alert('Desain berhasil disimpan dan dimasukkan ke keranjang!')
+      router.push('/checkout')
+    } catch (err) {
+      console.error('Error simpan keranjang:', err)
       setLoading(false)
       alert('Gagal menyimpan ke keranjang.')
-      return
     }
-    window.dispatchEvent(new Event('dscpl_cart_updated'))
-
-    setLoading(false)
-    alert('Mockup 3D berhasil disimpan dan dimasukkan ke keranjang!')
-    router.push('/checkout')
   }
 
   const active = designs[activeSide]
@@ -319,7 +281,7 @@ function CustomStudio() {
                 className="bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-bold px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1"
                 title="Download gambar 3D sisi yang sedang dilihat"
               >
-                📥 Download {SIDE_LABEL[activeSide]}
+                📥 Download Preview
               </button>
               <div className="flex gap-1">
                 {SIDES.map((s) => (
@@ -346,11 +308,12 @@ function CustomStudio() {
                 front: { image: designs.front.image, scale: designs.front.scale, x: designs.front.x, y: designs.front.y },
                 back: { image: designs.back.image, scale: designs.back.scale, x: designs.back.x, y: designs.back.y },
               }}
+              onDownloadRef={downloadTriggerRef}
             />
           </div>
         </div>
 
-        {/* KOLOM KANAN: EDITOR (DIBUAT LEBIH LAPANG & TIDAK PADAT) */}
+        {/* KOLOM KANAN: EDITOR */}
         <div className="lg:col-span-5 bg-zinc-900 p-5 sm:p-6 rounded-3xl border border-zinc-800/80 shadow-xl space-y-6 flex flex-col justify-between">
           <div className="space-y-5">
             <div>
@@ -358,9 +321,9 @@ function CustomStudio() {
               <p className="text-xs text-zinc-400 font-medium">Pilih pakaian, atur desain, dan sesuaikan pesanan Anda.</p>
             </div>
 
-            {/* 1. PILIH JENIS PAKAIAN & KATALOG PRODUK SPESIFIK */}
+            {/* 1. PILIH JENIS PAKAIAN & KATALOG */}
             <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/80 space-y-3">
-              <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">1. Jenis Pakaian</label>
+              <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">Jenis Pakaian</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {APPAREL_TYPES.map((type) => (
                   <button
@@ -405,7 +368,7 @@ function CustomStudio() {
               </div>
             </div>
 
-            {/* 2. TEMPLATE DIELINE DEPAN & BELAKANG */}
+            {/* 2. TEMPLATE DIELINE */}
             <div className="bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800/80 space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">Template Dieline Sisi Cetak</span>
@@ -490,7 +453,7 @@ function CustomStudio() {
               </div>
             </div>
 
-            {/* 4. UUNGGAH ARTWORK */}
+            {/* 4. UNGGAH ARTWORK */}
             <div className="space-y-1.5">
               <label className="block text-[11px] font-black uppercase tracking-wider text-zinc-300">Unggah Artwork (PNG Transparan)</label>
               <div className="grid grid-cols-2 gap-3">
@@ -564,7 +527,7 @@ function CustomStudio() {
               disabled={loading}
               className="bg-white hover:bg-zinc-200 text-black font-black text-xs px-5 py-3.5 rounded-xl uppercase tracking-wider transition cursor-pointer shadow-lg whitespace-nowrap"
             >
-              {loading ? 'Merender...' : 'Masukkan Keranjang'}
+              {loading ? 'Menyimpan...' : 'Masukkan Keranjang'}
             </button>
           </div>
         </div>

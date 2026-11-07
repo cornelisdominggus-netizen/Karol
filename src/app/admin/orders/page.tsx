@@ -123,6 +123,42 @@ export default function AdminDashboardPage() {
     setOrders(orders.filter((ord) => ord.id !== id))
   }
 
+  // Helper Ekstrak 4 Berkas Studio dari Database
+  const extractFileUrls = (itemsText: string) => {
+    if (!itemsText) return { desFront: '', desBack: '', mockFront: '', mockBack: '' }
+
+    const getUrl = (keyword: string) => {
+      const regex = new RegExp(`\\[${keyword}:\\s*(https?://[^\\]]+)\\]`)
+      const match = itemsText.match(regex)
+      return match ? match[1].trim() : ''
+    }
+
+    return {
+      desFront: getUrl('Desain Depan'),
+      desBack: getUrl('Desain Belakang'),
+      mockFront: getUrl('Mockup Depan') || getUrl('Mockup 3D Depan'),
+      mockBack: getUrl('Mockup Belakang') || getUrl('Mockup 3D Belakang'),
+    }
+  }
+
+  const handleDownloadFile = async (url: string, filename: string) => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Gagal mengunduh file.')
+      const blob = await res.blob()
+      const blobUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (err) {
+      alert('Gagal mendownload file gambar.')
+    }
+  }
+
   // Handler Produk dengan Upload File Foto ke Supabase Storage
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -267,16 +303,16 @@ export default function AdminDashboardPage() {
             {orders.length === 0 ? (
               <div className="text-center py-16 space-y-2">
                 <span className="text-4xl">📭</span>
-                <p className="text-xs text-gray-500 font-semibold">Belum ada pesanan masuk dari halaman checkout.</p>
+                <p className="text-xs text-gray-500 font-semibold">Belum ada pesanan masuk.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[700px]">
+                <table className="w-full text-left text-xs min-w-[850px]">
                   <thead>
                     <tr className="border-b bg-gray-50 text-gray-500 uppercase">
                       <th className="p-3">ID / Waktu</th>
                       <th className="p-3">Pelanggan</th>
-                      <th className="p-3">Detail Item & File Desain</th>
+                      <th className="p-3">Detail Item & 4 Berkas Studio</th>
                       <th className="p-3">Total Harga</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-center">Aksi</th>
@@ -284,9 +320,8 @@ export default function AdminDashboardPage() {
                   </thead>
                   <tbody className="divide-y">
                     {orders.map((ord) => {
-                      const textParts = ord.items ? ord.items.split('| File Desain:') : [ord.items]
-                      const itemDetail = textParts[0]
-                      const fileUrl = textParts[1] ? textParts[1].trim() : null
+                      const cleanItemsText = ord.items ? ord.items.split('||')[0] : ''
+                      const urls = extractFileUrls(ord.items)
 
                       return (
                         <tr key={ord.id} className="hover:bg-gray-50">
@@ -296,73 +331,92 @@ export default function AdminDashboardPage() {
                               {new Date(ord.created_at).toLocaleString('id-ID')}
                             </span>
                           </td>
+
                           <td className="p-3 align-top">
-                            <p className="font-bold text-black">{ord.customer_name}</p>
+                            <p className="font-bold text-black uppercase">{ord.customer_name}</p>
                             <p className="text-[11px] text-gray-500">{ord.phone}</p>
-                            <p className="text-[10px] text-gray-400">{ord.address}</p>
+                            <p className="text-[10px] text-gray-400 max-w-[180px]">{ord.address}</p>
                           </td>
-                          
-                          <td className="p-3 font-medium text-gray-800 max-w-xs align-top">
-                            <div className="space-y-2">
-                              <p className="font-semibold text-black">{itemDetail}</p>
+
+                          <td className="p-3 align-top space-y-3 max-w-sm">
+                            <p className="font-semibold text-black">{cleanItemsText}</p>
+
+                            {/* 4 Kolom Berkas Preview & Download */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
                               
-                              {fileUrl && fileUrl !== 'Tanpa file' && (
-                                <div className="pt-1 space-y-2">
-                                  {/\.(png|jpg|jpeg|webp)$/i.test(fileUrl) ? (
-                                    <>
-                                      <img 
-                                        src={fileUrl} 
-                                        alt="Preview Desain Pelanggan" 
-                                        className="w-20 h-20 object-cover rounded-xl border border-gray-300 shadow-sm bg-gray-50"
-                                        onError={(e) => {
-                                          (e.target as HTMLElement).style.display = 'none';
-                                        }}
-                                      />
-                                      <button
-                                        onClick={async () => {
-                                          try {
-                                            const response = await fetch(fileUrl);
-                                            if (!response.ok) {
-                                              throw new Error('File tidak ditemukan di Supabase Storage (404).');
-                                            }
-                                            const blob = await response.blob();
-                                            if (blob.type.includes('json') || blob.size < 500) {
-                                              alert('Gagal: File gambar rusak atau tidak ditemukan di server.');
-                                              return;
-                                            }
-                                            const blobUrl = window.URL.createObjectURL(blob);
-                                            const link = document.createElement('a');
-                                            link.href = blobUrl;
-                                            link.download = `desain-order-${ord.id}.png`;
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                            window.URL.revokeObjectURL(blobUrl);
-                                          } catch (err: any) {
-                                            alert(err.message || 'Gagal mendownload file.');
-                                          }
-                                        }}
-                                        className="inline-flex items-center gap-1.5 bg-black hover:bg-zinc-800 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition shadow-sm cursor-pointer"
-                                      >
-                                        📥 Download Gambar Desain
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <a 
-                                      href={fileUrl} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1.5 bg-black text-white px-3 py-1.5 rounded-xl text-[10px] font-black hover:bg-gray-800 transition shadow-sm"
-                                    >
-                                      <span>📄 Buka / Unduh Berkas Desain</span>
+                              {/* 1. Desain Depan */}
+                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
+                                <span className="text-[8px] font-black text-gray-600 block">Desain Depan</span>
+                                {urls.desFront ? (
+                                  <>
+                                    <a href={urls.desFront} target="_blank" rel="noreferrer">
+                                      <img src={urls.desFront} alt="Desain Depan" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
                                     </a>
-                                  )}
-                                </div>
-                              )}
+                                    <button onClick={() => handleDownloadFile(urls.desFront, `desain-depan-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
+                                      📥 Download
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
+                                )}
+                              </div>
+
+                              {/* 2. Desain Belakang */}
+                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
+                                <span className="text-[8px] font-black text-gray-600 block">Desain Belakang</span>
+                                {urls.desBack ? (
+                                  <>
+                                    <a href={urls.desBack} target="_blank" rel="noreferrer">
+                                      <img src={urls.desBack} alt="Desain Belakang" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
+                                    </a>
+                                    <button onClick={() => handleDownloadFile(urls.desBack, `desain-belakang-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
+                                      📥 Download
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
+                                )}
+                              </div>
+
+                              {/* 3. Mockup 3D Depan */}
+                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
+                                <span className="text-[8px] font-black text-gray-600 block">Mockup 3D Depan</span>
+                                {urls.mockFront ? (
+                                  <>
+                                    <a href={urls.mockFront} target="_blank" rel="noreferrer">
+                                      <img src={urls.mockFront} alt="Mockup Depan" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
+                                    </a>
+                                    <button onClick={() => handleDownloadFile(urls.mockFront, `mockup-depan-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
+                                      📥 Download
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
+                                )}
+                              </div>
+
+                              {/* 4. Mockup 3D Belakang */}
+                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
+                                <span className="text-[8px] font-black text-gray-600 block">Mockup 3D Belakang</span>
+                                {urls.mockBack ? (
+                                  <>
+                                    <a href={urls.mockBack} target="_blank" rel="noreferrer">
+                                      <img src={urls.mockBack} alt="Mockup Belakang" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
+                                    </a>
+                                    <button onClick={() => handleDownloadFile(urls.mockBack, `mockup-belakang-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
+                                      📥 Download
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
+                                )}
+                              </div>
+
                             </div>
                           </td>
 
-                          <td className="p-3 font-black text-red-600 align-top">{ord.total_price}</td>
+                          <td className="p-3 font-black text-red-600 align-top whitespace-nowrap">{ord.total_price}</td>
+                          
                           <td className="p-3 align-top">
                             <select
                               value={ord.status}
@@ -375,6 +429,7 @@ export default function AdminDashboardPage() {
                               <option value="Selesai">Selesai</option>
                             </select>
                           </td>
+
                           <td className="p-3 text-center align-top whitespace-nowrap">
                             <button
                               onClick={() => handleDeleteOrder(ord.id)}
@@ -393,7 +448,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: TAMBAH & KELOLA KATALOG DENGAN UPLOAD FOTO */}
+        {/* TAB 2: TAMBAH & KELOLA KATALOG */}
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             
@@ -443,14 +498,12 @@ export default function AdminDashboardPage() {
                   <select
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black"
+                    className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black cursor-pointer"
                   >
                     <option value="Custom Kaos">Custom Kaos</option>
                     <option value="Custom Oversized">Custom Oversized</option>
                     <option value="Custom Hoodie">Custom Hoodie</option>
                     <option value="Custom Topi">Custom Topi</option>
-                    <option value="Custom Tas">Custom Tas</option>
-                    <option value="Custom Merchandise">Custom Merchandise</option>
                     <option value="Polosan">Polosan</option>
                   </select>
                 </div>
@@ -463,7 +516,6 @@ export default function AdminDashboardPage() {
                     onChange={(e) => setImageFile(e.target.files?.[0] || null)}
                     className="w-full bg-gray-50 border rounded-xl p-2 text-xs font-semibold text-black file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-black file:text-white hover:file:bg-zinc-800 cursor-pointer"
                   />
-                  <p className="text-[10px] text-gray-400 mt-1">Pilih foto produk (PNG/JPG) dari perangkat Anda.</p>
                 </div>
 
                 <button
@@ -511,7 +563,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 3: PENGATURAN CMS & TEKS */}
+        {/* TAB 3: PENGATURAN CMS */}
         {activeTab === 'settings' && (
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-6 max-w-2xl">
             <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">

@@ -46,7 +46,7 @@ const TARGET_SIZE: Record<string, number> = {
   topi: 1.8,
 }
 
-// Nama mesh yang dibuang (mesh nyasar seperti lantai/bayangan). Lihat Console: "Mesh <jenis>:".
+// Nama mesh yang dibuang (mesh nyasar seperti lantai/bayangan).
 const HIDE_MESHES: Record<string, string[]> = {
   kaos: [],
   oversized: [],
@@ -55,7 +55,6 @@ const HIDE_MESHES: Record<string, string[]> = {
 }
 
 // Kedalaman proyeksi desain (kelipatan lebar desain) untuk model berlapis seperti hoodie.
-// Jenis yang tidak tercantum memakai perhitungan otomatis dari ketebalan kain.
 const DECAL_DEPTH_FACTOR: Record<string, number> = {
   hoodie: 0.5,
 }
@@ -149,7 +148,6 @@ interface DesignLayerProps {
 }
 
 function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, positionY, anchor }: DesignLayerProps) {
-  // Tekstur dimuat sekali per gambar
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
   useEffect(() => {
     if (!imageUrl) {
@@ -196,7 +194,6 @@ function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, pos
     }
   }, [material])
 
-  // Potongan decal milik lapisan ini (bisa lebih dari satu: satu per mesh baju yang tertimpa)
   const decalsRef = useRef<THREE.Mesh[]>([])
   const removeDecals = useCallback(() => {
     decalsRef.current.forEach((d) => {
@@ -206,7 +203,6 @@ function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, pos
     decalsRef.current = []
   }, [model])
 
-  // Bersihkan saat model/tekstur berganti atau lapisan dilepas
   useEffect(() => removeDecals, [model, texture, removeDecals])
 
   useEffect(() => {
@@ -232,8 +228,6 @@ function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, pos
       point = anchor.point.clone()
       normal = anchor.normal.clone()
     } else {
-      // Posisi standar dari slider. Depan ditembak dari +Z, belakang dari -Z.
-      // Di belakang, kiri/kanan terbalik supaya geser kanan = ke kanan menurut pelihat.
       const dirX = side === 'front' ? 1 : -1
       const aimX = centerX + dirX * positionX * size.x * 0.5
       const aimY = fullBox.min.y + size.y * (0.55 + positionY * 0.5)
@@ -267,7 +261,6 @@ function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, pos
 
     const into = normal.clone().negate()
 
-    // Ketebalan kain, supaya desain tidak tembus ke sisi lain
     const behind = new THREE.Raycaster(point.clone().addScaledVector(into, 0.002), into)
       .intersectObject(model, true)
       .filter(solid)
@@ -284,7 +277,6 @@ function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, pos
     const rotMatrix = new THREE.Matrix4().lookAt(normal, new THREE.Vector3(0, 0, 0), up)
     const orientation = new THREE.Euler().setFromRotationMatrix(rotMatrix)
 
-    // Semua mesh baju di sekitar titik tempel (hoodie biasanya berlapis)
     const reach = Math.max(width, height, depth) * 0.8
     const candidates: THREE.Mesh[] = []
     model.traverse((c) => {
@@ -329,10 +321,8 @@ interface ApparelModelProps {
 
 function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModelProps) {
   const { camera, gl } = useThree()
-
   const { scene } = useGLTF(MODEL_PATHS[apparelType] || MODEL_PATHS.kaos)
 
-  // Salinan model milik komponen ini: material disalin, mesh nyasar dibuang, ukuran diseragamkan
   const model = useMemo(() => {
     const clone = scene.clone(true)
 
@@ -345,15 +335,6 @@ function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModel
     })
 
     clone.updateWorldMatrix(true, true)
-    const infos: { name: string; size: string }[] = []
-    clone.traverse((c) => {
-      if (isMesh(c)) {
-        const s = new THREE.Box3().setFromObject(c).getSize(new THREE.Vector3())
-        infos.push({ name: c.name, size: `${s.x.toFixed(2)} x ${s.y.toFixed(2)} x ${s.z.toFixed(2)}` })
-      }
-    })
-    console.log(`Mesh ${apparelType}:`, infos)
-
     const hide = HIDE_MESHES[apparelType] || []
     const toRemove: THREE.Object3D[] = []
     clone.traverse((c) => {
@@ -369,8 +350,6 @@ function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModel
     return clone
   }, [scene, apparelType])
 
-  // Titik tempel hasil geser langsung di baju, terpisah untuk depan & belakang.
-  // null = pakai posisi dari slider.
   const [anchors, setAnchors] = useState<Anchors>({ front: null, back: null })
 
   useEffect(() => {
@@ -383,7 +362,6 @@ function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModel
     setAnchors((a) => ({ ...a, back: null }))
   }, [designs.back.x, designs.back.y])
 
-  // Warna bahan (decal desain tidak ikut diwarnai)
   useEffect(() => {
     model.traverse((child) => {
       if (!isMesh(child) || child.userData.isDecal) return
@@ -400,7 +378,6 @@ function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModel
     })
   }, [model, color])
 
-  // ---- Geser desain langsung di baju (ikut permukaan, bisa ke samping & lengan) ----
   const draggingSideRef = useRef<Side | null>(null)
 
   useEffect(() => {
@@ -456,7 +433,6 @@ function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModel
     }
   }, [camera, gl, model, controlsRef])
 
-  // Desain yang benar-benar terlihat di bawah kursor (bukan yang tertutup kain di baliknya)
   const visibleDecal = (e: ThreeEvent<PointerEvent>) => {
     const first = e.intersections[0]
     if (!first) return undefined
@@ -465,7 +441,7 @@ function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModel
 
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     const hit = visibleDecal(e)
-    if (!hit) return // seret di luar desain = putar model seperti biasa
+    if (!hit) return
 
     e.stopPropagation()
     draggingSideRef.current = hit.object.userData.side as Side
@@ -510,7 +486,6 @@ function ApparelModel({ apparelType, color, designs, controlsRef }: ApparelModel
   )
 }
 
-// Arahkan kamera ke sisi yang sedang diedit
 function CameraRig({ viewSide, controlsRef }: { viewSide: Side; controlsRef: React.MutableRefObject<any> }) {
   const { camera } = useThree()
   useEffect(() => {
@@ -519,6 +494,29 @@ function CameraRig({ viewSide, controlsRef }: { viewSide: Side; controlsRef: Rea
     camera.lookAt(0, 0, 0)
     controlsRef.current?.update()
   }, [viewSide, camera, controlsRef])
+  return null
+}
+
+// Komponen penangkap instance WebGL renderer untuk fungsionalitas download
+function SceneCapture({ onReady }: { onReady: React.MutableRefObject<(() => void) | null> }) {
+  const { gl, scene, camera } = useThree()
+  useEffect(() => {
+    onReady.current = () => {
+      try {
+        // Render ulang paksa frame terakhir agar buffer canvas terisi penuh
+        gl.render(scene, camera)
+        const dataUrl = gl.domElement.toDataURL('image/png')
+        const link = document.createElement('a')
+        link.href = dataUrl
+        link.download = `preview-3d-${Date.now()}.png`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } catch (err) {
+        console.error('Gagal mengekspor gambar canvas 3D:', err)
+      }
+    }
+  }, [gl, scene, camera, onReady])
   return null
 }
 
@@ -531,6 +529,7 @@ interface Mockup3DProps {
   color?: string
   designs?: Designs
   viewSide?: Side
+  onDownloadRef?: React.MutableRefObject<(() => void) | null>
 }
 
 const EMPTY_DESIGNS: Designs = {
@@ -543,8 +542,21 @@ export default function Mockup3D({
   color = '#ffffff',
   designs = EMPTY_DESIGNS,
   viewSide = 'front',
+  onDownloadRef,
 }: Mockup3DProps) {
   const controlsRef = useRef<any>(null)
+  const internalDownloadRef = useRef<(() => void) | null>(null)
+
+  // Hubungkan ref internal ke ref dari parent component jika ada
+  useEffect(() => {
+    if (onDownloadRef) {
+      onDownloadRef.current = () => {
+        if (internalDownloadRef.current) {
+          internalDownloadRef.current()
+        }
+      }
+    }
+  }, [onDownloadRef])
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-center relative bg-zinc-900/50 rounded-3xl p-4 border border-zinc-800 overflow-hidden shadow-2xl">
@@ -557,7 +569,11 @@ export default function Mockup3D({
 
       <div className="w-full h-[480px] cursor-grab active:cursor-grabbing flex items-center justify-center">
         <ModelErrorBoundary key={apparelType} label={apparelType}>
-          <Canvas camera={{ position: [0, 0, 4], fov: 45 }}>
+          {/* Perbaikan: Mengaktifkan preserveDrawingBuffer dan alpha pada gl */}
+          <Canvas 
+            camera={{ position: [0, 0, 4], fov: 45 }}
+            gl={{ preserveDrawingBuffer: true, alpha: true }}
+          >
             <ambientLight intensity={1.5} />
             <directionalLight position={[5, 5, 5]} intensity={2} />
             <directionalLight position={[-5, -5, -5]} intensity={0.8} />
@@ -566,6 +582,7 @@ export default function Mockup3D({
             </React.Suspense>
             <OrbitControls ref={controlsRef} enableZoom={true} minDistance={2} maxDistance={6} target={[0, 0, 0]} />
             <CameraRig viewSide={viewSide} controlsRef={controlsRef} />
+            <SceneCapture onReady={internalDownloadRef} />
           </Canvas>
         </ModelErrorBoundary>
       </div>
