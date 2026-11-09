@@ -94,7 +94,7 @@ export default function Navbar() {
     <header className="w-full bg-white border-b border-zinc-100 sticky top-0 z-50">
 
       {/* HEADER UTAMA SATU BARIS (DESKTOP) */}
-      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 relative">
+      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         
         {/* Kiri: Logo DSCPL & Kolom Pencarian Produk */}
         <div className="flex items-center gap-4 flex-shrink-0">
@@ -106,16 +106,16 @@ export default function Navbar() {
             {isMobileMenuOpen ? '✕' : '☰'}
           </button>
 
-          <Link href="/" className="flex items-center py-1">
+          <Link href="/" className="flex items-center py-1 flex-shrink-0">
             <img 
               src="/logo-dscpl.png" 
               alt="DSCPL WEAR" 
-              className="h-8 md:h-9 w-auto object-contain" 
+              className="h-8 md:h-9 w-auto object-contain max-w-[120px]" 
             />
           </Link>
 
           {/* Kolom Pencarian Tepat di Sebelah Logo */}
-          <form onSubmit={handleSearchSubmit} className="w-56 lg:w-72 hidden md:block">
+          <form onSubmit={handleSearchSubmit} className="w-48 lg:w-60 hidden md:block">
             <div className="relative">
               <input
                 type="text"
@@ -129,12 +129,11 @@ export default function Navbar() {
           </form>
         </div>
 
-        {/* Kanan: Menu Navigasi (Font lebih kecil: text-[9px]) & Keranjang/Masuk di bawahnya */}
+        {/* Kanan: Menu Navigasi (di atas) & Keranjang/Masuk di bawahnya */}
         <div className="hidden lg:flex flex-col items-end space-y-1 flex-shrink-0">
           
-          {/* Menu Navigasi (Sangat Mungil di Atas Keranjang & Masuk) */}
-          <nav className="flex items-center space-x-3.5 text-[9px] font-black uppercase tracking-wider text-zinc-600">
-            {/* Dropdown Katalog */}
+          {/* Menu Navigasi Mungil di Atas (Termasuk Hubungi Admin / Chat) */}
+          <nav className="flex items-center space-x-3 text-[9px] font-black uppercase tracking-wider text-zinc-600">
             <div 
               className="relative py-0.5"
               onMouseEnter={() => setIsCustomDropdownOpen(true)}
@@ -158,13 +157,12 @@ export default function Navbar() {
 
             <Link href="/products?category=Polosan" className="hover:text-red-600 transition">{siteText.navPolosan}</Link>
             <Link href="/location" className="hover:text-red-600 transition">{siteText.navLocation}</Link>
-            <Link href="/track" className="text-red-600 hover:text-black transition">🔍 Lacak</Link>
+            <Link href="/track" className="hover:text-black transition">🔍 Lacak</Link>
+            <Link href="/chat" className="text-red-600 hover:text-black transition">💬 Hubungi Admin</Link>
           </nav>
 
-          {/* Keranjang & Tombol Masuk / Admin */}
+          {/* Keranjang & Tombol Masuk / Admin di Bawah Menu Navigasi */}
           <div className="flex items-center space-x-2 relative">
-
-            {/* Keranjang Desktop */}
             <div 
               className="relative hidden md:block"
               onMouseEnter={() => setIsCartOpen(true)}
@@ -210,7 +208,6 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Tombol Masuk / Admin Desktop */}
             {isAdminLoggedIn ? (
               <div className="hidden md:flex items-center gap-1.5">
                 <Link href="/admin/orders" className="bg-black text-white text-xs font-black px-3 py-1.5 rounded-full hover:bg-zinc-800 transition">
@@ -229,7 +226,6 @@ export default function Navbar() {
                 MASUK
               </Link>
             )}
-
           </div>
 
         </div>
@@ -249,7 +245,7 @@ export default function Navbar() {
         </form>
       </div>
 
-      {/* Menu Mobile (Hanya tampil di HP) */}
+      {/* Menu Mobile */}
       {isMobileMenuOpen && (
         <div className="md:hidden bg-white border-t border-zinc-100 px-6 py-6 space-y-5 shadow-2xl animate-fadeIn">
           <div className="flex flex-col space-y-3 text-xs font-bold text-black">
@@ -293,43 +289,33 @@ export default function Navbar() {
                 <span className="text-zinc-400">›</span>
               </Link>
 
-              <Link href="/track" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-red-600 font-black border-b border-zinc-100">
+              <Link href="/track" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">
                 <span className="uppercase tracking-wider">🔍 Lacak Pesanan</span>
+                <span className="text-zinc-400">›</span>
+              </Link>
+
+              <Link href="/chat" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-red-600 font-black border-b border-zinc-100">
+                <span className="uppercase tracking-wider">💬 Hubungi Admin</span>
                 <span className="text-red-400">›</span>
               </Link>
 
               {isAdminLoggedIn ? (
                 <>
                   <Link href="/admin/orders" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">
-                    <span className="flex items-center gap-2.5 uppercase tracking-wider">
-                      <svg className="w-4 h-4 text-zinc-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-                        <circle cx="12" cy="7" r="4" />
-                      </svg>
-                      Admin Panel
-                    </span>
+                    <span className="flex items-center gap-2.5 uppercase tracking-wider">Admin Panel</span>
                     <span className="text-zinc-400">›</span>
                   </Link>
-
                   <button 
                     onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} 
                     className="w-full flex items-center justify-between py-2.5 px-1 text-red-600 font-black cursor-pointer"
                   >
-                    <span className="flex items-center gap-2.5 uppercase tracking-wider">
-                      🚪 Keluar Akun
-                    </span>
+                    <span className="flex items-center gap-2.5 uppercase tracking-wider">🚪 Keluar Akun</span>
                     <span>›</span>
                   </button>
                 </>
               ) : (
                 <Link href="/admin/login" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800">
-                  <span className="flex items-center gap-2.5 uppercase tracking-wider">
-                    <svg className="w-4 h-4 text-zinc-900" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-                      <circle cx="12" cy="7" r="4" />
-                    </svg>
-                    Masuk Akun / Admin
-                  </span>
+                  <span className="flex items-center gap-2.5 uppercase tracking-wider">Masuk Akun / Admin</span>
                   <span className="text-zinc-400">›</span>
                 </Link>
               )}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -28,10 +28,17 @@ type Product = {
 export default function AdminDashboardPage() {
   const router = useRouter()
   const [authed, setAuthed] = useState(false)
-  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'settings'>('orders')
+  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'settings' | 'chats'>('orders')
 
   // State Pesanan
   const [orders, setOrders] = useState<Order[]>([])
+
+  // State Chat
+  const [chatRooms, setChatRooms] = useState<string[]>([])
+  const [activeRoom, setActiveRoom] = useState<string>('')
+  const [messages, setMessages] = useState<any[]>([])
+  const [replyMsg, setReplyMsg] = useState('')
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // State Produk Katalog & Upload File Foto
   const [products, setProducts] = useState<Product[]>([])
@@ -58,10 +65,11 @@ export default function AdminDashboardPage() {
       }
       setAuthed(true)
 
-      const [ordersRes, productsRes, settingsRes] = await Promise.all([
+      const [ordersRes, productsRes, settingsRes, chatsRes] = await Promise.all([
         supabase.from('orders').select('*').order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('created_at', { ascending: false }),
-        supabase.from('site_settings').select('data').eq('id', 1).maybeSingle()
+        supabase.from('site_settings').select('data').eq('id', 1).maybeSingle(),
+        supabase.from('chats').select('room_id').order('created_at', { ascending: false })
       ])
 
       if (ordersRes.data) setOrders(ordersRes.data as Order[])
@@ -69,11 +77,18 @@ export default function AdminDashboardPage() {
       if (settingsRes.data?.data) {
         setSiteText((prev) => ({ ...prev, ...(settingsRes.data!.data as any) }))
       }
+      if (chatsRes.data) {
+        const uniqueRooms = Array.from(new Set(chatsRes.data.map((c: any) => c.room_id))) as string[]
+        setChatRooms(uniqueRooms)
+        if (uniqueRooms.length > 0 && !activeRoom) {
+          setActiveRoom(uniqueRooms[0])
+        }
+      }
     }
 
     init()
 
-    // REAL-TIME LISTENER UNTUK ADMIN
+    // REAL-TIME LISTENER UNTUK ADMIN (Orders & Chats)
     const ordersChannel = supabase
       .channel('admin-orders-realtime')
       .on(
@@ -93,10 +108,47 @@ export default function AdminDashboardPage() {
       )
       .subscribe()
 
+    const chatsChannel = supabase
+      .channel('admin-chats-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'chats' },
+        (payload: any) => {
+          const newRoom = payload.new.room_id
+          setChatRooms((prev) => {
+            if (!prev.includes(newRoom)) return [newRoom, ...prev]
+            return prev
+          })
+          if (activeRoom === newRoom) {
+            setMessages((prev) => [...prev, payload.new])
+          }
+        }
+      )
+      .subscribe()
+
     return () => {
       supabase.removeChannel(ordersChannel)
+      supabase.removeChannel(chatsChannel)
     }
-  }, [router])
+  }, [router, activeRoom])
+
+  // Ambil pesan chat saat room aktif berubah
+  useEffect(() => {
+    if (!activeRoom) return
+    const fetchMessages = async () => {
+      const { data } = await supabase
+        .from('chats')
+        .select('*')
+        .eq('room_id', activeRoom)
+        .order('created_at', { ascending: true })
+      if (data) setMessages(data)
+    }
+    fetchMessages()
+  }, [activeRoom])
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -121,6 +173,24 @@ export default function AdminDashboardPage() {
       return
     }
     setOrders(orders.filter((ord) => ord.id !== id))
+  }
+
+  // Kirim Balasan Admin ke Chat Pelanggan
+  const handleSendAdminReply = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!replyMsg.trim() || !activeRoom) return
+
+    const { error } = await supabase.from('chats').insert([
+      {
+        room_id: activeRoom,
+        sender: 'admin',
+        message: replyMsg.trim()
+      }
+    ])
+
+    if (!error) {
+      setReplyMsg('')
+    }
   }
 
   // Helper Ekstrak Hanya 2 Berkas (Desain Depan & Desain Belakang)
@@ -278,6 +348,14 @@ export default function AdminDashboardPage() {
             📦 Manajemen Pesanan ({orders.length})
           </button>
           <button
+            onClick={() => setActiveTab('chats')}
+            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
+              activeTab === 'chats' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            💬 Live Chat Pembeli ({chatRooms.length})
+          </button>
+          <button
             onClick={() => setActiveTab('products')}
             className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
               activeTab === 'products' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
@@ -413,6 +491,68 @@ export default function AdminDashboardPage() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB LIVE CHAT ADMIN */}
+        {activeTab === 'chats' && (
+          <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-[500px]">
+            <div className="md:col-span-4 border-r border-gray-200 pr-4 space-y-2">
+              <h3 className="text-xs font-black uppercase tracking-wider text-gray-500 mb-3">Daftar Ruang Chat Pembeli</h3>
+              {chatRooms.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">Belum ada chat masuk.</p>
+              ) : (
+                chatRooms.map((room) => (
+                  <button
+                    key={room}
+                    onClick={() => setActiveRoom(room)}
+                    className={`w-full text-left px-4 py-3 rounded-2xl text-xs font-bold transition cursor-pointer ${
+                      activeRoom === room ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100 text-black'
+                    }`}
+                  >
+                    Room ID: {room}
+                  </button>
+                ))
+              )}
+            </div>
+
+            <div className="md:col-span-8 flex flex-col justify-between">
+              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-xs">
+                {activeRoom ? `Percakapan di Room: ${activeRoom}` : 'Pilih room chat di samping'}
+              </div>
+
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 max-h-[380px]">
+                {messages.map((m, idx) => {
+                  const isAdmin = m.sender === 'admin'
+                  return (
+                    <div key={idx} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs font-bold ${
+                        isAdmin ? 'bg-black text-white' : 'bg-white border text-black shadow-sm'
+                      }`}>
+                        <p className="text-[9px] opacity-60 mb-0.5">{isAdmin ? 'Anda (Admin)' : 'Pembeli'}</p>
+                        {m.message}
+                      </div>
+                    </div>
+                  )
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {activeRoom && (
+                <form onSubmit={handleSendAdminReply} className="pt-3 border-t border-gray-200 flex gap-2">
+                  <input
+                    type="text"
+                    value={replyMsg}
+                    onChange={(e) => setReplyMsg(e.target.value)}
+                    placeholder="Balas pesan pembeli..."
+                    className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-semibold text-black focus:outline-none focus:border-black"
+                  />
+                  <button type="submit" className="bg-black text-white text-xs font-black px-5 py-2.5 rounded-xl uppercase tracking-wider transition cursor-pointer">
+                    Kirim
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         )}
 
@@ -562,7 +702,7 @@ export default function AdminDashboardPage() {
               </div>
 
               <div>
-                <label className="block font-bold mb-1">Pengumuman Promo / Event</label>
+                <label className="block font-bold mb-1">Pengumuman Promo / Event / Banner</label>
                 <input
                   type="text"
                   value={siteText.promoAnnouncement}
