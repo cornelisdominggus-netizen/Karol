@@ -56,7 +56,7 @@ export default function SizeChartModal({ isOpen, onClose }: { isOpen: boolean, o
 
         <button
           onClick={onClose}
-          className="w-full bg-black text-white text-xs font-black py-3 rounded-xl uppercase tracking-wider hover:bg-gray-800 transition"
+          className="w-full bg-black text-white text-xs font-black py-3 rounded-xl uppercase tracking-wider hover:bg-gray-800 transition cursor-pointer"
         >
           Tutup Panduan
         </button>

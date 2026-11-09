@@ -10,40 +10,22 @@ export default function Home() {
   const [products, setProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  const [siteText, setSiteText] = useState({
-    heroTitle: 'DESAIN KAOSMU. LIHAT HASILNYA.',
-    heroSubtitle: 'Studio mockup 3D interaktif untuk mewujudkan apparel impianmu.',
-    btnCustom: 'MULAI DESAIN ➔',
-    btnCatalog: 'KATALOG'
-  })
-
   useEffect(() => {
     const fetchData = async () => {
       const { data: prodData } = await supabase
         .from('products')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(4)
+        .limit(8)
 
       if (prodData) setProducts(prodData)
-
-      const { data: settingData } = await supabase
-        .from('site_settings')
-        .select('data')
-        .eq('id', 1)
-        .maybeSingle()
-
-      if (settingData?.data) {
-        setSiteText(prev => ({ ...prev, ...(settingData.data as any) }))
-      }
-
       setLoading(false)
     }
 
     fetchData()
   }, [])
 
-  // Kategori Utama dengan Desain Ramping & Slim (Diubah langsung menuju katalog produk kategori)
+  // Kategori Utama
   const categories = [
     {
       name: 'Kaos',
@@ -84,40 +66,94 @@ export default function Home() {
   ]
 
   return (
-    <main className="min-h-screen bg-white text-black pb-10">
+    <main className="min-h-screen bg-white text-black pb-16">
       
-      {/* HERO SECTION COMPACT */}
-      <section className="bg-zinc-950 text-white py-10 px-6 md:px-12">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="space-y-2.5 max-w-lg text-center md:text-left">
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-red-500 bg-red-950/60 border border-red-900/50 px-3 py-1 rounded-full inline-block">
-              PRECISION WORKSHOP DEPOK
-            </span>
-            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight leading-tight">
-              {siteText.heroTitle}
-            </h1>
-            <p className="text-xs text-zinc-400 font-medium">
-              {siteText.heroSubtitle}
-            </p>
-            <div className="flex items-center justify-center md:justify-start gap-3 pt-1">
-              <Link
-                href="/custom"
-                className="bg-white hover:bg-zinc-200 text-black font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-widest transition shadow"
-              >
-                {siteText.btnCustom}
-              </Link>
-              <Link
-                href="/products"
-                className="bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 font-black text-xs px-4 py-2.5 rounded-xl uppercase tracking-widest transition"
-              >
-                {siteText.btnCatalog}
-              </Link>
-            </div>
+      {/* 1. HERO SECTION: KOTAK PUTIH DENGAN TOMBOL HITAM */}
+      <section className="bg-zinc-950 text-white py-6 px-6 md:px-12 flex justify-center">
+        <Link
+          href="/custom"
+          className="group w-full max-w-xs bg-white text-black rounded-2xl p-4 flex flex-col items-center justify-center shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
+        >
+          {/* Ikon Palet Lukis / Desain */}
+          <div className="w-16 h-16 my-2 flex items-center justify-center">
+            <img 
+              src="/art.png" 
+              alt="Mulai Desain" 
+              className="w-full h-full object-contain filter drop-shadow group-hover:rotate-6 transition duration-300" 
+            />
           </div>
-        </div>
+
+          {/* Tombol Hitam dengan Teks Putih */}
+          <div className="w-full bg-black group-hover:bg-zinc-800 text-white font-black text-[11px] py-2.5 px-4 rounded-xl uppercase tracking-widest text-center shadow transition duration-300">
+            Mulai Desain ➔
+          </div>
+        </Link>
       </section>
 
-      {/* KATEGORI UTAMA (VERSI SLIM & RINGKAS) */}
+      {/* 2. PRODUK PILIHAN (UKURAN KARTU LEBIH KECIL & PROPOSIONAL) */}
+      <section className="max-w-7xl mx-auto px-4 md:px-12 pt-8 space-y-4">
+        <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
+          <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
+            Produk Pilihan
+          </h2>
+          <Link href="/products" className="text-[11px] font-bold text-zinc-400 hover:text-black transition">
+            Katalog Lengkap ➔
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="py-10 text-center text-xs font-bold text-zinc-400">Memuat produk...</div>
+        ) : products.length === 0 ? (
+          <div className="py-10 text-center text-xs text-zinc-400">Belum ada produk.</div>
+        ) : (
+          <div className="flex gap-3 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            {products.map((prod) => {
+              let apparelType = 'kaos'
+              const cat = prod.category?.toLowerCase() || ''
+              const title = prod.title?.toLowerCase() || ''
+              if (cat.includes('hoodie') || title.includes('hoodie')) apparelType = 'hoodie'
+              else if (cat.includes('topi') || title.includes('topi')) apparelType = 'topi'
+              else if (cat.includes('tas') || title.includes('tas')) apparelType = 'tas'
+              else if (cat.includes('oversize') || title.includes('oversize')) apparelType = 'oversized'
+
+              return (
+                <div
+                  key={prod.id}
+                  onClick={() => router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
+                  className="group w-[170px] sm:w-[190px] flex-shrink-0 bg-white border border-zinc-200/80 hover:border-black rounded-2xl p-2 flex flex-col justify-between cursor-pointer transition shadow-sm snap-start"
+                >
+                  <div className="relative w-full h-36 bg-zinc-100 rounded-xl overflow-hidden">
+                    <span className="absolute top-2 left-2 bg-black text-white text-[7px] font-black px-1.5 py-0.5 rounded-full z-10 uppercase">
+                      {prod.category}
+                    </span>
+                    {prod.image && (
+                      <img src={prod.image} alt={prod.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    )}
+                  </div>
+
+                  <div className="pt-2 px-1 space-y-1">
+                    <h4 className="font-bold text-[11px] text-zinc-900 line-clamp-1">{prod.title}</h4>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black text-zinc-950">{prod.price}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
+                        }
+                        className="bg-black hover:bg-zinc-800 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider transition"
+                      >
+                        Custom
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* 3. KATEGORI UTAMA */}
       <section className="max-w-7xl mx-auto px-4 md:px-12 pt-8 space-y-3">
         <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
           <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
@@ -147,69 +183,6 @@ export default function Home() {
             </div>
           ))}
         </div>
-      </section>
-
-      {/* PRODUK PILIHAN TERBARU (RINGKAS) */}
-      <section className="max-w-7xl mx-auto px-4 md:px-12 pt-10 space-y-3">
-        <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
-          <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
-            Produk Pilihan
-          </h2>
-          <Link href="/products" className="text-[11px] font-bold text-zinc-400 hover:text-black transition">
-            Katalog Lengkap ➔
-          </Link>
-        </div>
-
-        {loading ? (
-          <div className="py-10 text-center text-xs font-bold text-zinc-400">Memuat produk...</div>
-        ) : products.length === 0 ? (
-          <div className="py-10 text-center text-xs text-zinc-400">Belum ada produk.</div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {products.map((prod) => {
-              let apparelType = 'kaos'
-              const cat = prod.category?.toLowerCase() || ''
-              const title = prod.title?.toLowerCase() || ''
-              if (cat.includes('hoodie') || title.includes('hoodie')) apparelType = 'hoodie'
-              else if (cat.includes('topi') || title.includes('topi')) apparelType = 'topi'
-              else if (cat.includes('tas') || title.includes('tas')) apparelType = 'tas'
-              else if (cat.includes('oversize') || title.includes('oversize')) apparelType = 'oversized'
-
-              return (
-                <div
-                  key={prod.id}
-                  onClick={() => router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
-                  className="group bg-white border border-zinc-200/80 hover:border-black rounded-2xl p-2.5 flex flex-col justify-between cursor-pointer transition shadow-sm"
-                >
-                  <div className="relative aspect-square bg-zinc-100 rounded-xl overflow-hidden">
-                    <span className="absolute top-2 left-2 bg-black text-white text-[8px] font-black px-2 py-0.5 rounded-full z-10 uppercase">
-                      {prod.category}
-                    </span>
-                    {prod.image && (
-                      <img src={prod.image} alt={prod.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                    )}
-                  </div>
-
-                  <div className="pt-2 px-0.5 space-y-1.5">
-                    <h4 className="font-bold text-xs text-zinc-900 line-clamp-1">{prod.title}</h4>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-zinc-950">{prod.price}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
-                        }
-                        className="bg-black hover:bg-zinc-800 text-white text-[9px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider transition"
-                      >
-                        Custom
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
       </section>
 
     </main>

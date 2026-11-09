@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "toko-print-karoy - KREASY.id",
+  title: "DSCPL WEAR - Precision Workshop",
   description: "Pusat Sablon DTF dan Kebutuhan Custom Printing",
 };
 
@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="id">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}>
-        {/* Navbar dipasang secara global */}
+        {/* Navbar dipasang secara global tanpa bar hitam atas */}
         <Navbar />
         
         {/* Konten utama dari setiap halaman */}
