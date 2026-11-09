@@ -25,7 +25,9 @@ type Review = {
 function ProductsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const categoryParam = searchParams.get('category') || 'Semua Katalog'
+  const categoryParam = searchParams.get('category') || 'Semua'
+  const subCategoryParam = searchParams.get('sub') || 'Semua'
+  const searchQuery = searchParams.get('search') || ''
 
   const [products, setProducts] = useState<Product[]>([])
   const [loadingProducts, setLoadingProducts] = useState(true)
@@ -96,31 +98,86 @@ function ProductsContent() {
     checkAdmin()
   }, [])
 
-  const filteredProducts = products.filter((p) => {
-    if (categoryParam === 'Semua Katalog') return true
-    
-    const cat = (p.category || '').toLowerCase()
-
-    if (categoryParam === 'Custom Oversized') {
-      return cat.includes('oversized') || cat.includes('oversize') || p.title.toLowerCase().includes('oversize')
-    }
-
-    const target = categoryParam.toLowerCase().replace('custom ', '')
-    return cat.includes(target)
-  })
-
-  const categoriesList = [
-    { name: 'Semua', value: 'Semua Katalog' },
-    { name: 'Oversized', value: 'Custom Oversized' },
-    { name: 'Kaos', value: 'Custom Kaos' },
-    { name: 'Hoodie', value: 'Custom Hoodie' },
-    { name: 'Topi', value: 'Custom Topi' },
+  // Kategori Utama di Menu Navigasi Atas
+  const baseCategories = [
+    { name: 'Semua', value: 'Semua' },
+    { name: 'Polosan', value: 'Polosan' },
     { name: 'Tas', value: 'Custom Tas' },
-    { name: 'Merchandise', value: 'Custom Merchandise' },
-    { name: 'Polosan', value: 'Polosan' }
+    { name: 'Merchandise', value: 'Custom Merchandise' }
   ]
 
-  // Daftar warna bahan persis seperti di studio 3D
+  // Deteksi kategori kustom lain buatan admin secara dinamis
+  const customCategoriesSet = Array.from(
+    new Set(
+      products
+        .map((p) => p.category)
+        .filter(
+          (cat) =>
+            cat &&
+            !['Oversized', 'Kaos', 'Topi', 'Hoodie', 'Custom Kaos', 'Custom Oversized', 'Custom Hoodie', 'Custom Topi', 'Polosan', 'Custom Tas', 'Custom Merchandise'].includes(cat)
+        )
+    )
+  )
+
+  const categoriesList = [
+    ...baseCategories,
+    ...customCategoriesSet.map((cat) => ({ name: cat, value: cat }))
+  ]
+
+  // Sub-kategori khusus di bawah menu "Polosan"
+  const polosanSubCategories = [
+    { name: 'Semua Polosan', value: 'Semua' },
+    { name: 'Kaos', value: 'Kaos' },
+    { name: 'Oversized', value: 'Oversized' },
+    { name: 'Hoodie', value: 'Hoodie' },
+    { name: 'Topi', value: 'Topi' }
+  ]
+
+  // Logika Filter Produk Berdasarkan Kategori & Sub-Kategori
+  const filteredProducts = products.filter((p) => {
+    if (searchQuery) {
+      return p.title.toLowerCase().includes(searchQuery.toLowerCase())
+    }
+
+    if (categoryParam === 'Semua') return true
+
+    const cat = (p.category || '').toLowerCase()
+    const title = (p.title || '').toLowerCase()
+
+    if (categoryParam === 'Polosan') {
+      const isPolosanGroup = 
+        cat.includes('kaos') ||
+        cat.includes('oversized') ||
+        cat.includes('oversize') ||
+        cat.includes('hoodie') ||
+        cat.includes('topi') ||
+        cat.includes('polosan') ||
+        title.includes('kaos') ||
+        title.includes('oversize') ||
+        title.includes('hoodie') ||
+        title.includes('topi')
+
+      if (!isPolosanGroup) return false
+
+      if (subCategoryParam === 'Kaos') {
+        return (cat.includes('kaos') || title.includes('kaos')) && !cat.includes('oversized') && !title.includes('oversize')
+      }
+      if (subCategoryParam === 'Oversized') {
+        return cat.includes('oversized') || cat.includes('oversize') || title.includes('oversize')
+      }
+      if (subCategoryParam === 'Hoodie') {
+        return cat.includes('hoodie') || title.includes('hoodie')
+      }
+      if (subCategoryParam === 'Topi') {
+        return cat.includes('topi') || title.includes('topi')
+      }
+
+      return true
+    }
+
+    return p.category.toLowerCase() === categoryParam.toLowerCase()
+  })
+
   const availableColors = [
     { name: 'White', hex: '#ffffff', border: 'border-zinc-300' },
     { name: 'Black', hex: '#111111', border: 'border-black' },
@@ -174,17 +231,17 @@ function ProductsContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white text-black py-6 px-3 md:px-10">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <main className="min-h-screen bg-white text-black py-6 px-3 md:px-10 selection:bg-black selection:text-white">
+      <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Kategori Horizontal Scroll ala Uniqlo */}
+        {/* Kategori Utama Horizontal Scroll */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-zinc-100">
           {categoriesList.map((cat, idx) => {
             const isActive = categoryParam.toLowerCase() === cat.value.toLowerCase()
             return (
               <button
                 key={idx}
-                onClick={() => router.push(`/products?category=${encodeURIComponent(cat.value)}`)}
+                onClick={() => router.push(`/products?category=${encodeURIComponent(cat.value)}&sub=Semua`)}
                 className={`whitespace-nowrap px-4 py-2 text-xs font-bold uppercase transition cursor-pointer ${
                   isActive 
                     ? 'text-black border-b-2 border-black -mb-[9px]' 
@@ -197,17 +254,40 @@ function ProductsContent() {
           })}
         </div>
 
+        {/* SUB-KATEGORI KHUSUS (MUNCUL HANYA KETIKA KATEGORI "POLOSAN" DIPILIH) */}
+        {categoryParam === 'Polosan' && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 bg-zinc-50 px-4 py-2.5 rounded-2xl border border-zinc-200/60">
+            <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 mr-2">Filter Polosan:</span>
+            {polosanSubCategories.map((sub, idx) => {
+              const isSubActive = subCategoryParam.toLowerCase() === sub.value.toLowerCase()
+              return (
+                <button
+                  key={idx}
+                  onClick={() => router.push(`/products?category=Polosan&sub=${encodeURIComponent(sub.value)}`)}
+                  className={`whitespace-nowrap px-3 py-1.5 rounded-xl text-[11px] font-bold uppercase transition cursor-pointer ${
+                    isSubActive
+                      ? 'bg-black text-white shadow'
+                      : 'bg-white text-zinc-700 hover:bg-zinc-200 border border-zinc-200'
+                  }`}
+                >
+                  {sub.name}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Header Kategori */}
         <div className="flex justify-between items-baseline pt-2">
           <h1 className="text-xl md:text-3xl font-black uppercase tracking-tight text-zinc-900">
-            {categoryParam}
+            {searchQuery ? `Pencarian: "${searchQuery}"` : `${categoryParam} ${subCategoryParam !== 'Semua' ? `> ${subCategoryParam}` : ''}`}
           </h1>
           <span className="text-xs font-bold text-zinc-400">
             {filteredProducts.length} Produk
           </span>
         </div>
 
-        {/* Grid Katalog Ala Uniqlo dengan Indikator Warna Studio 3D */}
+        {/* Grid Katalog Produk */}
         <div className="space-y-6">
           {loadingProducts ? (
             <div className="py-24 text-center">
@@ -221,23 +301,14 @@ function ProductsContent() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
               {filteredProducts.map((prod) => {
-                let apparelType = 'kaos'
-                const cat = prod.category?.toLowerCase() || ''
-                const title = prod.title?.toLowerCase() || ''
-                
-                if (cat.includes('hoodie') || title.includes('hoodie')) apparelType = 'hoodie'
-                else if (cat.includes('topi') || title.includes('topi')) apparelType = 'topi'
-                else if (cat.includes('tas') || title.includes('tas')) apparelType = 'tas'
-                else if (cat.includes('oversize') || title.includes('oversize')) apparelType = 'oversized'
-
                 return (
-                  <div
+                  <Link
                     key={prod.id}
-                    onClick={() => router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
+                    href={`/products/${prod.id}`}
                     className="group bg-white flex flex-col justify-between cursor-pointer space-y-2 pb-3"
                   >
                     {/* Foto Produk Kotak Bersih */}
-                    <div className="relative aspect-square bg-zinc-100 rounded-xl overflow-hidden">
+                    <div className="relative aspect-square bg-zinc-100 rounded-xl overflow-hidden border border-zinc-100">
                       {prod.image && (
                         <img
                           src={prod.image}
@@ -245,11 +316,13 @@ function ProductsContent() {
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-500 ease-out"
                         />
                       )}
+                      <span className="absolute top-2 left-2 bg-black text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                        {prod.category}
+                      </span>
                     </div>
 
-                    {/* Detail Teks Ala Retail */}
+                    {/* Detail Teks Retail */}
                     <div className="space-y-1.5 px-0.5">
-                      {/* Titik Warna Bahan (Sinkron dengan Studio 3D) */}
                       <div className="flex items-center gap-1.5 py-0.5">
                         {availableColors.map((c) => (
                           <span
@@ -261,7 +334,6 @@ function ProductsContent() {
                         ))}
                       </div>
 
-                      {/* Judul Produk Tidak Terpotong */}
                       <h4 className="font-semibold text-xs md:text-sm text-zinc-900 line-clamp-2 leading-tight group-hover:underline">
                         {prod.title}
                       </h4>
@@ -273,23 +345,16 @@ function ProductsContent() {
                         )}
                       </div>
 
-                      {/* Rating & Tombol Custom */}
                       <div className="flex items-center justify-between pt-1">
                         <div className="flex items-center gap-1 text-[10px] text-zinc-500 font-bold">
-                          <span className="text-yellow-500">★</span> 4.8 <span className="text-zinc-300">|</span> <span className="text-[9px] font-normal text-zinc-400">Custom 3D</span>
+                          <span className="text-yellow-500">★</span> 4.8
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            router.push(`/custom?type=${apparelType}&id=${prod.id}`)
-                          }}
-                          className="bg-zinc-900 hover:bg-black text-white text-[9px] font-bold px-2.5 py-1.5 rounded-lg uppercase tracking-wider transition cursor-pointer"
-                        >
-                          Design ➔
-                        </button>
+                        <span className="bg-zinc-900 group-hover:bg-black text-white text-[9px] font-bold px-2.5 py-1.5 rounded-lg uppercase tracking-wider transition">
+                          DETAIL ➔
+                        </span>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                 )
               })}
             </div>
@@ -317,7 +382,7 @@ function ProductsContent() {
                   {isAdmin && (
                     <button
                       onClick={() => handleDeleteReview(rev.id)}
-                      className="text-red-500 text-xs font-bold p-1 hover:bg-red-50 rounded"
+                      className="text-red-500 text-xs font-bold p-1 hover:bg-red-50 rounded cursor-pointer"
                     >
                       🗑️
                     </button>

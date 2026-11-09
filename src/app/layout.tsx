@@ -16,6 +16,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DSCPL WEAR - Custom Apparel",
   description: "Pusat Sablon DTF dan Kebutuhan Custom Printing",
+  icons: {
+    icon: [
+      { url: "/logo-dscpl.png", type: "image/png" }
+    ],
+    shortcut: "/logo-dscpl.png",
+    apple: "/logo-dscpl.png",
+  },
 };
 
 export default function RootLayout({
@@ -25,6 +32,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
+      <head>
+        <link rel="icon" type="image/png" href="/logo-dscpl.png" />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-50`}>
         {/* Navbar dipasang secara global tanpa bar hitam atas */}
         <Navbar />

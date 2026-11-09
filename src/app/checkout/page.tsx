@@ -31,7 +31,7 @@ export default function CheckoutPage() {
     return () => window.removeEventListener('dscpl_cart_updated', loadCart)
   }, [])
 
-  const handleQuantityChange = (cartId: number, delta: number) => {
+  const handleQuantityChange = (cartId: string, delta: number) => {
     const updated = cart.map(item => {
       if (item.cartId === cartId) {
         const newQty = Math.max(1, (item.quantity || 1) + delta)
@@ -44,7 +44,7 @@ export default function CheckoutPage() {
     window.dispatchEvent(new Event('dscpl_cart_updated'))
   }
 
-  const handleRemoveItem = (cartId: number) => {
+  const handleRemoveItem = (cartId: string) => {
     const updated = cart.filter(item => item.cartId !== cartId)
     setCart(updated)
     localStorage.setItem('dscpl_cart', JSON.stringify(updated))
@@ -52,14 +52,13 @@ export default function CheckoutPage() {
   }
 
   const subtotalNum = cart.reduce((acc, item) => {
-    const p = parseInt(item.price.replace(/[^0-9]/g, '')) || 0
+    const p = parseInt(String(item.price).replace(/[^0-9]/g, '')) || 0
     return acc + (p * (item.quantity || 1))
   }, 0)
 
   const shippingCost = cart.length > 0 ? 15000 : 0
   const totalNum = subtotalNum + shippingCost
 
-  // Helper untuk mengubah data base64 dari Studio menjadi File untuk di-upload ke Supabase Storage
   const dataURLtoFile = (dataurl: string, filename: string) => {
     try {
       const arr = dataurl.split(',')
@@ -77,17 +76,21 @@ export default function CheckoutPage() {
   }
 
   const uploadToStorage = async (fileObj: File | null, folderPrefix: string) => {
-    if (!fileObj) return 'Tidak ada'
+    if (!fileObj) return null
     const fileName = `${folderPrefix}_${Date.now()}_${Math.random().toString(36).substring(2)}.png`
     
-    const { error } = await supabase.storage.from('designs').upload(fileName, fileObj)
+    // Pastikan Anda sudah membuat Public Bucket bernama 'designs' di Supabase Storage Anda!
+    const { error } = await supabase.storage.from('designs').upload(fileName, fileObj, {
+      contentType: fileObj.type,
+      upsert: true
+    })
     if (error) {
       console.error(`Gagal upload ${folderPrefix}:`, error.message)
-      return 'Gagal upload'
+      return null
     }
 
     const { data } = supabase.storage.from('designs').getPublicUrl(fileName)
-    return data?.publicUrl || 'Gagal ambil URL'
+    return data?.publicUrl || null
   }
 
   const handleCreateOrder = async (e: React.FormEvent) => {
@@ -104,29 +107,37 @@ export default function CheckoutPage() {
     setLoading(true)
 
     try {
-      let designFilesSummary = ''
+      const processedCart = []
 
-      // Proses otomatis file desain dari setiap item di keranjang
+      // Upload file desain ke Supabase Storage supaya admin bisa mendownloadnya dengan mudah
       for (const item of cart) {
-        let frontUrl = 'Tidak ada'
-        let backUrl = 'Tidak ada'
+        let frontUrl = item.frontDesignImage || null
+        let backUrl = item.backDesignImage || null
 
         if (item.frontDesignImage && item.frontDesignImage.startsWith('data:image')) {
-          const fileFront = dataURLtoFile(item.frontDesignImage, item.frontDesignName || 'desain_depan.png')
-          frontUrl = await uploadToStorage(fileFront, 'desain_depan')
+          const fileFront = dataURLtoFile(item.frontDesignImage, 'desain_depan.png')
+          const uploadedUrl = await uploadToStorage(fileFront, 'desain_depan')
+          if (uploadedUrl) frontUrl = uploadedUrl
         }
 
         if (item.backDesignImage && item.backDesignImage.startsWith('data:image')) {
-          const fileBack = dataURLtoFile(item.backDesignImage, item.backDesignName || 'desain_belakang.png')
-          backUrl = await uploadToStorage(fileBack, 'desain_belakang')
+          const fileBack = dataURLtoFile(item.backDesignImage, 'desain_belakang.png')
+          const uploadedUrl = await uploadToStorage(fileBack, 'desain_belakang')
+          if (uploadedUrl) backUrl = uploadedUrl
         }
 
-        designFilesSummary += `[Produk: ${item.title} | Ukuran: ${item.size} | Qty: ${item.quantity}] -> Desain Depan: ${frontUrl} | Desain Belakang: ${backUrl}\n`
+        processedCart.push({
+          ...item,
+          frontDesignImage: frontUrl,
+          backDesignImage: backUrl,
+          image: frontUrl || item.image
+        })
       }
 
-      const itemsSummary = cart.map(i => `${i.title} (Ukuran: ${i.size}) x${i.quantity}`).join(' | ')
+      const itemsSummary = processedCart.map(i => `${i.title} (Ukuran: ${i.size}) x${i.quantity}`).join(' | ')
       const totalPriceStr = 'Rp ' + totalNum.toLocaleString('id-ID')
 
+      // Simpan ke Supabase. Kolom 'items' menyimpan array JSON agar halaman admin bisa merender tombol download desain
       const { error } = await supabase
         .from('orders')
         .insert([
@@ -134,7 +145,7 @@ export default function CheckoutPage() {
             customer_name: name || 'Pelanggan DSCPL',
             phone: phone || '-',
             address: `${address}, ${city}, ${province}`,
-            items: `${itemsSummary} || Berkas Desain Otomatis:\n${designFilesSummary}`,
+            items: processedCart, // Menyimpan format JSON array lengkap dengan link gambar storage
             total_price: totalPriceStr,
             status: 'Pending'
           }
@@ -142,7 +153,7 @@ export default function CheckoutPage() {
 
       if (error) {
         console.error('Supabase Insert Error:', error)
-        alert('Gagal menyimpan pesanan ke database.')
+        alert('Gagal menyimpan pesanan ke database: ' + error.message)
         setLoading(false)
         return
       }
@@ -151,13 +162,13 @@ export default function CheckoutPage() {
       setCart([])
       window.dispatchEvent(new Event('dscpl_cart_updated'))
 
-      // Format pesan WhatsApp Admin dengan menyertakan tautan desain otomatis
-      const adminWhatsAppNumber = '6285697211657' 
-      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A%0A*BERKAS DESAIN OTOMATIS*:%0A${encodeURIComponent(designFilesSummary)}%0A*Total Pembayaran*: ${totalPriceStr}`
+      const adminWhatsAppNumber = '6285697211657'
+      const designLinksText = processedCart.map(i => `• ${i.title}%0A  - Depan: ${i.frontDesignImage || 'Tidak ada'}%0A  - Belakang: ${i.backDesignImage || 'Tidak ada'}`).join('%0A')
+      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A%0A*LINK BERKAS DESAIN*:%0A${designLinksText}%0A%0A*Total Pembayaran*: ${totalPriceStr}`
 
       window.open(`https://wa.me/${adminWhatsAppNumber}?text=${waMessage}`, '_blank')
 
-      alert('Pesanan & berkas desain otomatis berhasil dikirim!')
+      alert('Pesanan & berkas desain berhasil dikirim!')
       router.replace('/')
 
     } catch (err: any) {
@@ -183,7 +194,6 @@ export default function CheckoutPage() {
 
         <form onSubmit={handleCreateOrder} className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
-          {/* KOLOM KIRI: FORM PENGIRIMAN (TANPA UPLOAD ULANG YANG RIBET) */}
           <div className="lg:col-span-7 bg-zinc-50/70 p-6 md:p-8 rounded-3xl shadow-sm border border-zinc-200/80 space-y-6">
             <div className="border-b border-zinc-200 pb-3">
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
@@ -266,11 +276,10 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* KETERANGAN BERKAS OTOMATIS */}
               <div className="pt-4 border-t border-zinc-200 bg-emerald-50 p-4 rounded-2xl border border-emerald-200 text-emerald-900 space-y-1">
                 <p className="font-black text-xs uppercase tracking-wider">✨ Berkas Studio Terlampir Otomatis</p>
                 <p className="text-[11px] text-emerald-700 font-medium">
-                  Desain depan dan belakang yang Anda buat di studio sudah tersimpan otomatis di keranjang dan akan langsung dikirimkan ke Admin saat Anda membuat pesanan.
+                  Desain depan dan belakang yang Anda buat di studio akan otomatis di-upload ke server Supabase dan bisa langsung didownload oleh Admin.
                 </p>
               </div>
             </div>
@@ -300,7 +309,6 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* KOLOM KANAN: RINGKASAN & PREVIEW GAMBAR DESAIN */}
           <div className="lg:col-span-5 bg-zinc-50/70 p-6 md:p-8 rounded-3xl shadow-sm border border-zinc-200/80 space-y-6">
             <div className="border-b border-zinc-200 pb-3">
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
@@ -328,7 +336,6 @@ export default function CheckoutPage() {
                       <span className="font-black text-xs text-red-600 flex-shrink-0">{item.price}</span>
                     </div>
 
-                    {/* PREVIEW GAMBAR DESAIN DARI STUDIO */}
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       {item.frontDesignImage && (
                         <div className="bg-zinc-50 p-2 rounded-xl border border-zinc-200 text-center">

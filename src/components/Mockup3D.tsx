@@ -37,7 +37,6 @@ const MODEL_PATHS: Record<string, string> = {
   topi: '/models/topi.glb',
 }
 
-// Semua model diskalakan otomatis supaya sisi terpanjangnya sama dengan angka ini.
 const DEFAULT_TARGET_SIZE = 2.4
 const TARGET_SIZE: Record<string, number> = {
   kaos: 2.4,
@@ -46,7 +45,6 @@ const TARGET_SIZE: Record<string, number> = {
   topi: 1.8,
 }
 
-// Nama mesh yang dibuang (mesh nyasar seperti lantai/bayangan).
 const HIDE_MESHES: Record<string, string[]> = {
   kaos: [],
   oversized: [],
@@ -54,7 +52,6 @@ const HIDE_MESHES: Record<string, string[]> = {
   topi: [],
 }
 
-// Kedalaman proyeksi desain (kelipatan lebar desain) untuk model berlapis seperti hoodie.
 const DECAL_DEPTH_FACTOR: Record<string, number> = {
   hoodie: 0.5,
 }
@@ -65,7 +62,6 @@ const DECAL_DEPTH_FACTOR: Record<string, number> = {
 
 const isMesh = (o: THREE.Object3D): o is THREE.Mesh => (o as THREE.Mesh).isMesh === true
 
-// Kotak batas baju saja (decal desain tidak ikut dihitung)
 const getModelBox = (root: THREE.Object3D) => {
   const box = new THREE.Box3()
   root.updateWorldMatrix(true, true)
@@ -75,7 +71,6 @@ const getModelBox = (root: THREE.Object3D) => {
   return box
 }
 
-// Buang segitiga decal yang membelakangi arah proyeksi, supaya desain tidak tembus ke sisi lain
 const keepFacingTriangles = (geo: THREE.BufferGeometry, dir: THREE.Vector3, minDot = 0.3) => {
   const pos = geo.getAttribute('position')
   const nor = geo.getAttribute('normal')
@@ -106,7 +101,6 @@ const keepFacingTriangles = (geo: THREE.BufferGeometry, dir: THREE.Vector3, minD
   return out
 }
 
-// Penangkap error: kalau file .glb kosong/rusak, tampilkan pesan, bukan layar blank
 class ModelErrorBoundary extends React.Component<
   { children: React.ReactNode; label: string },
   { failed: boolean }
@@ -149,26 +143,32 @@ interface DesignLayerProps {
 
 function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, positionY, anchor }: DesignLayerProps) {
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
+
   useEffect(() => {
     if (!imageUrl) {
       setTexture(null)
       return
     }
     let cancelled = false
-    let loaded: THREE.Texture | null = null
-    new THREE.TextureLoader().load(imageUrl, (t) => {
-      if (cancelled) {
-        t.dispose()
-        return
-      }
+    let loadedTexture: THREE.Texture | null = null
+
+    // Memuat gambar via HTML Image Element supaya format Base64 / Blob URL terbaca 100%
+    const imgElement = new window.Image()
+    imgElement.crossOrigin = 'anonymous'
+    imgElement.src = imageUrl
+    imgElement.onload = () => {
+      if (cancelled) return
+      const t = new THREE.Texture(imgElement)
       t.colorSpace = THREE.SRGBColorSpace
       t.anisotropy = 8
-      loaded = t
+      t.needsUpdate = true
+      loadedTexture = t
       setTexture(t)
-    })
+    }
+
     return () => {
       cancelled = true
-      loaded?.dispose()
+      loadedTexture?.dispose()
     }
   }, [imageUrl])
 
@@ -188,6 +188,7 @@ function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, pos
         : null,
     [texture]
   )
+
   useEffect(() => {
     return () => {
       material?.dispose()
@@ -497,13 +498,11 @@ function CameraRig({ viewSide, controlsRef }: { viewSide: Side; controlsRef: Rea
   return null
 }
 
-// Komponen penangkap instance WebGL renderer untuk fungsionalitas download
 function SceneCapture({ onReady }: { onReady: React.MutableRefObject<(() => void) | null> }) {
   const { gl, scene, camera } = useThree()
   useEffect(() => {
     onReady.current = () => {
       try {
-        // Render ulang paksa frame terakhir agar buffer canvas terisi penuh
         gl.render(scene, camera)
         const dataUrl = gl.domElement.toDataURL('image/png')
         const link = document.createElement('a')
@@ -547,7 +546,6 @@ export default function Mockup3D({
   const controlsRef = useRef<any>(null)
   const internalDownloadRef = useRef<(() => void) | null>(null)
 
-  // Hubungkan ref internal ke ref dari parent component jika ada
   useEffect(() => {
     if (onDownloadRef) {
       onDownloadRef.current = () => {
@@ -569,7 +567,6 @@ export default function Mockup3D({
 
       <div className="w-full h-[480px] cursor-grab active:cursor-grabbing flex items-center justify-center">
         <ModelErrorBoundary key={apparelType} label={apparelType}>
-          {/* Perbaikan: Mengaktifkan preserveDrawingBuffer dan alpha pada gl */}
           <Canvas 
             camera={{ position: [0, 0, 4], fov: 45 }}
             gl={{ preserveDrawingBuffer: true, alpha: true }}

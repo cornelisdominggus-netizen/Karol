@@ -115,18 +115,34 @@ export default function Home() {
   ]
 
   const renderProductCard = (prod: any) => {
+    const cat = (prod.category || '').toLowerCase()
+    
+    // Deteksi apakah produk ini murni produk custom 3D atau produk jadi/kategori baru (seperti Christmas Series)
+    const isCustom3D = 
+      cat.includes('custom kaos') || 
+      cat.includes('custom oversized') || 
+      cat.includes('custom hoodie') || 
+      cat.includes('custom topi') ||
+      cat === 'kaos' ||
+      cat === 'oversized' ||
+      cat === 'hoodie' ||
+      cat === 'topi'
+
     let apparelType = 'kaos'
-    const cat = prod.category?.toLowerCase() || ''
-    const title = prod.title?.toLowerCase() || ''
-    if (cat.includes('hoodie') || title.includes('hoodie')) apparelType = 'hoodie'
-    else if (cat.includes('topi') || title.includes('topi')) apparelType = 'topi'
-    else if (cat.includes('tas') || title.includes('tas')) apparelType = 'tas'
-    else if (cat.includes('oversize') || title.includes('oversize')) apparelType = 'oversized'
+    if (cat.includes('hoodie')) apparelType = 'hoodie'
+    else if (cat.includes('topi')) apparelType = 'topi'
+    else if (cat.includes('tas')) apparelType = 'tas'
+    else if (cat.includes('oversize')) apparelType = 'oversized'
+
+    // Jika produk kustom 3D ke /custom, jika produk baru/siap pakai langsung ke detail produk biasa (/products/[id])
+    const targetUrl = isCustom3D 
+      ? `/custom?type=${apparelType}&id=${prod.id}` 
+      : `/products/${prod.id}`
 
     return (
       <div
         key={prod.id}
-        onClick={() => router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
+        onClick={() => router.push(targetUrl)}
         className="group bg-white border border-zinc-200/80 hover:border-black rounded-2xl p-2 flex flex-col justify-between cursor-pointer transition shadow-sm w-full"
       >
         <div className="relative w-full h-36 bg-zinc-100 rounded-xl overflow-hidden">
@@ -145,11 +161,11 @@ export default function Home() {
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
-              }
+                router.push(targetUrl)
+              }}
               className="bg-black hover:bg-zinc-800 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider transition"
             >
-              Custom
+              {isCustom3D ? 'Custom' : 'Beli'}
             </button>
           </div>
         </div>

@@ -10,7 +10,11 @@ export default function Navbar() {
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isMobileCatalogOpen, setIsMobileCatalogOpen] = useState(false)
-  const [isCustomDropdownOpen, setIsCustomDropdownOpen] = useState(false)
+  const [isMobilePolosanOpen, setIsMobilePolosanOpen] = useState(false)
+  const [isCatalogDropdownOpen, setIsCatalogDropdownOpen] = useState(false)
+  const [isPolosanDropdownOpen, setIsPolosanDropdownOpen] = useState(false)
+  
+  const [dynamicCategories, setDynamicCategories] = useState<string[]>(['Christmas Series', 'Tas', 'Merchandise'])
   const [cart, setCart] = useState<any[]>([])
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -50,18 +54,28 @@ export default function Navbar() {
       setIsAdminLoggedIn(!!session)
     })
 
-    const loadTexts = async () => {
-      const { data } = await supabase
-        .from('site_settings')
-        .select('data')
-        .eq('id', 1)
-        .maybeSingle()
+    const loadSettingsAndCategories = async () => {
+      const [settingsRes, productsRes] = await Promise.all([
+        supabase.from('site_settings').select('data').eq('id', 1).maybeSingle(),
+        supabase.from('products').select('category')
+      ])
 
-      if (data?.data) {
-        setSiteText(prev => ({ ...prev, ...(data.data as any) }))
+      const settingsResult = settingsRes as { data: { data: any } | null }
+      if (settingsResult?.data?.data) {
+        setSiteText(prev => ({ ...prev, ...(settingsResult.data.data as any) }))
+      }
+
+      if (productsRes?.data) {
+        const excluded = ['kaos', 'oversized', 'hoodie', 'topi', 'custom kaos', 'custom oversized', 'custom hoodie', 'custom topi', 'polosan']
+        const dbCats = productsRes.data
+          .map((p: any) => p.category)
+          .filter((cat: string) => cat && !excluded.includes(cat.toLowerCase()))
+        
+        const combined = Array.from(new Set(['Christmas Series', 'Tas', 'Merchandise', ...dbCats]))
+        setDynamicCategories(combined)
       }
     }
-    loadTexts()
+    loadSettingsAndCategories()
 
     return () => {
       listener.subscription.unsubscribe()
@@ -96,7 +110,7 @@ export default function Navbar() {
       {/* HEADER UTAMA SATU BARIS (DESKTOP) */}
       <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         
-        {/* Kiri: Logo DSCPL & Kolom Pencarian Produk */}
+        {/* Kiri: Logo & Pencarian */}
         <div className="flex items-center gap-4 flex-shrink-0">
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -114,7 +128,6 @@ export default function Navbar() {
             />
           </Link>
 
-          {/* Kolom Pencarian Tepat di Sebelah Logo */}
           <form onSubmit={handleSearchSubmit} className="w-48 lg:w-60 hidden md:block">
             <div className="relative">
               <input
@@ -129,39 +142,61 @@ export default function Navbar() {
           </form>
         </div>
 
-        {/* Kanan: Menu Navigasi (di atas) & Keranjang/Masuk di bawahnya */}
+        {/* Kanan: Navigasi & Keranjang */}
         <div className="hidden lg:flex flex-col items-end space-y-1 flex-shrink-0">
           
-          {/* Menu Navigasi Mungil di Atas (Termasuk Hubungi Admin / Chat) */}
-          <nav className="flex items-center space-x-3 text-[9px] font-black uppercase tracking-wider text-zinc-600">
+          <nav className="flex items-center space-x-5 text-[9px] font-black uppercase tracking-wider text-zinc-600">
+            
+            {/* KATALOG DROPDOWN */}
             <div 
               className="relative py-0.5"
-              onMouseEnter={() => setIsCustomDropdownOpen(true)}
-              onMouseLeave={() => setIsCustomDropdownOpen(false)}
+              onMouseEnter={() => setIsCatalogDropdownOpen(true)}
+              onMouseLeave={() => setIsCatalogDropdownOpen(false)}
             >
               <Link href="/products" className="flex items-center gap-0.5 hover:text-red-600 transition cursor-pointer">
-                {siteText.navCustom} ▾
+                Katalog ▾
               </Link>
 
-              {isCustomDropdownOpen && (
-                <div className="absolute top-full right-0 w-40 bg-white shadow-2xl rounded-2xl border border-zinc-100 py-2 z-50 space-y-1">
-                  <Link href="/products?category=Custom Kaos" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Kaos</Link>
-                  <Link href="/products?category=Custom Oversized" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Oversized</Link>
-                  <Link href="/products?category=Custom Hoodie" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Hoodie</Link>
-                  <Link href="/products?category=Custom Topi" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Topi</Link>
-                  <Link href="/products?category=Custom Tas" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Tas</Link>
-                  <Link href="/products?category=Custom Merchandise" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Merchandise</Link>
+              {isCatalogDropdownOpen && (
+                <div className="absolute top-full right-0 w-48 bg-white shadow-2xl rounded-2xl border border-zinc-100 py-2 z-50 space-y-1">
+                  {dynamicCategories.map((cat, idx) => (
+                    <Link 
+                      key={idx} 
+                      href={`/products?category=${encodeURIComponent(cat)}`} 
+                      className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold uppercase truncate"
+                    >
+                      {cat}
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>
 
-            <Link href="/products?category=Polosan" className="hover:text-red-600 transition">{siteText.navPolosan}</Link>
+            {/* POLOSAN DROPDOWN */}
+            <div 
+              className="relative py-0.5"
+              onMouseEnter={() => setIsPolosanDropdownOpen(true)}
+              onMouseLeave={() => setIsPolosanDropdownOpen(false)}
+            >
+              <Link href="/products?category=Polosan" className="flex items-center gap-0.5 hover:text-red-600 transition cursor-pointer">
+                Polosan ▾
+              </Link>
+
+              {isPolosanDropdownOpen && (
+                <div className="absolute top-full right-0 w-44 bg-white shadow-2xl rounded-2xl border border-zinc-100 py-2 z-50 space-y-1">
+                  <Link href="/products?category=Custom Kaos" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold uppercase">Kaos</Link>
+                  <Link href="/products?category=Custom Oversized" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold uppercase">Oversized</Link>
+                  <Link href="/products?category=Custom Hoodie" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold uppercase">Hoodie</Link>
+                  <Link href="/products?category=Custom Topi" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold uppercase">Topi</Link>
+                </div>
+              )}
+            </div>
+
             <Link href="/location" className="hover:text-red-600 transition">{siteText.navLocation}</Link>
             <Link href="/track" className="hover:text-black transition">🔍 Lacak</Link>
             <Link href="/chat" className="text-red-600 hover:text-black transition">💬 Hubungi Admin</Link>
           </nav>
 
-          {/* Keranjang & Tombol Masuk / Admin di Bawah Menu Navigasi */}
           <div className="flex items-center space-x-2 relative">
             <div 
               className="relative hidden md:block"
@@ -231,7 +266,7 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Form Pencarian Mobile */}
+      {/* Mobile Search */}
       <div className="px-4 pb-3 md:hidden">
         <form onSubmit={handleSearchSubmit} className="relative">
           <input
@@ -239,83 +274,114 @@ export default function Navbar() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cari produk..."
-            className="w-full bg-zinc-50 text-sm text-black rounded-full py-2.5 pl-4 pr-10 border border-zinc-200 focus:outline-none focus:border-black transition"
+            className="w-full bg-zinc-50 text-xs text-black rounded-full py-2 pl-3.5 pr-8 border border-zinc-200 focus:outline-none focus:border-black transition"
           />
-          <button type="submit" className="absolute right-3.5 top-2.5 text-zinc-400 text-xs cursor-pointer">🔍</button>
+          <button type="submit" className="absolute right-2.5 top-2 text-zinc-400 text-xs cursor-pointer">🔍</button>
         </form>
       </div>
 
-      {/* Menu Mobile */}
+      {/* MOBILE MENU: TRUE LIQUID GLASS / FROSTED GLASS */}
       {isMobileMenuOpen && (
-        <div className="md:hidden bg-white border-t border-zinc-100 px-6 py-6 space-y-5 shadow-2xl animate-fadeIn">
-          <div className="flex flex-col space-y-3 text-xs font-bold text-black">
+        <div className="fixed inset-x-0 top-[57px] bottom-0 z-50 md:hidden bg-white/50 backdrop-blur-2xl text-black px-5 py-6 space-y-3 overflow-y-auto border-t border-white/80 shadow-[0_20px_50px_rgba(0,0,0,0.15)] animate-fadeIn">
+          <div className="max-w-md mx-auto flex flex-col space-y-2 text-[11px] font-bold text-zinc-900">
             
             <Link 
               href="/checkout" 
               onClick={() => setIsMobileMenuOpen(false)} 
-              className="py-3 px-4 bg-zinc-100 text-black rounded-2xl font-black flex items-center justify-between transition"
+              className="py-3 px-4 bg-white/70 hover:bg-white/90 backdrop-blur-md border border-white/80 text-black rounded-2xl font-black flex items-center justify-between transition shadow-sm mb-1"
             >
               <span className="flex items-center gap-2">🛒 Keranjang Belanja</span>
-              <span className="bg-black text-white px-2 py-0.5 rounded-full text-[10px]">{cart.length}</span>
+              <span className="bg-black text-white px-2 py-0.5 rounded-full text-[9px]">{cart.length}</span>
             </Link>
 
-            <div className="border-b border-zinc-100 pb-2">
+            {/* KATALOG PRODUK MOBILE */}
+            <div className="border-b border-zinc-200/50 pb-2">
               <button
                 onClick={() => setIsMobileCatalogOpen(!isMobileCatalogOpen)}
-                className="w-full flex items-center justify-between py-2.5 text-zinc-900 font-black uppercase tracking-wider cursor-pointer"
+                className="w-full flex items-center justify-between py-2 px-1 text-black font-black uppercase tracking-wider cursor-pointer"
               >
                 <span>Katalog Produk</span>
-                <span className="text-zinc-400 text-sm font-bold">{isMobileCatalogOpen ? '−' : '+'}</span>
+                <span className="text-zinc-500 text-xs font-bold">{isMobileCatalogOpen ? '−' : '+'}</span>
               </button>
 
               {isMobileCatalogOpen && (
-                <div className="grid grid-cols-2 gap-2 pt-2 pb-1 pl-1">
-                  <Link href="/products?category=Custom Kaos" onClick={() => { setIsMobileMenuOpen(false); setIsMobileCatalogOpen(false); }} className="p-3 bg-zinc-50 rounded-2xl border border-zinc-100 text-[11px] font-extrabold uppercase">Kaos</Link>
-                  <Link href="/products?category=Custom Oversized" onClick={() => { setIsMobileMenuOpen(false); setIsMobileCatalogOpen(false); }} className="p-3 bg-zinc-50 rounded-2xl border border-zinc-100 text-[11px] font-extrabold uppercase">Oversized</Link>
-                  <Link href="/products?category=Custom Hoodie" onClick={() => { setIsMobileMenuOpen(false); setIsMobileCatalogOpen(false); }} className="p-3 bg-zinc-50 rounded-2xl border border-zinc-100 text-[11px] font-extrabold uppercase">Hoodie</Link>
-                  <Link href="/products?category=Custom Topi" onClick={() => { setIsMobileMenuOpen(false); setIsMobileCatalogOpen(false); }} className="p-3 bg-zinc-50 rounded-2xl border border-zinc-100 text-[11px] font-extrabold uppercase">Topi</Link>
+                <div className="flex flex-col space-y-0.5 pl-3 py-1.5 bg-white/40 backdrop-blur-md rounded-2xl my-1 border border-white/60 shadow-sm">
+                  {dynamicCategories.map((cat, idx) => (
+                    <Link 
+                      key={idx}
+                      href={`/products?category=${encodeURIComponent(cat)}`} 
+                      onClick={() => { setIsMobileMenuOpen(false); setIsMobileCatalogOpen(false); }} 
+                      className="py-2 px-2 text-zinc-700 hover:text-black text-[10px] font-bold uppercase flex items-center justify-between border-b border-zinc-200/30 last:border-0 transition"
+                    >
+                      <span>{cat}</span>
+                      <span className="text-zinc-400">›</span>
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>
 
-            <div className="space-y-2 text-xs font-bold">
-              <Link href="/products?category=Polosan" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">
-                <span className="uppercase tracking-wider">Polosan Standar Distro</span>
-                <span className="text-zinc-400">›</span>
-              </Link>
-              
-              <Link href="/location" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">
-                <span className="uppercase tracking-wider">Lokasi Workshop Depok</span>
+            {/* POLOSAN CUSTOM 3D MOBILE */}
+            <div className="border-b border-zinc-200/50 pb-2">
+              <button
+                onClick={() => setIsMobilePolosanOpen(!isMobilePolosanOpen)}
+                className="w-full flex items-center justify-between py-2 px-1 text-black font-black uppercase tracking-wider cursor-pointer"
+              >
+                <span>Polosan Custom 3D</span>
+                <span className="text-zinc-500 text-xs font-bold">{isMobilePolosanOpen ? '−' : '+'}</span>
+              </button>
+
+              {isMobilePolosanOpen && (
+                <div className="flex flex-col space-y-0.5 pl-3 py-1.5 bg-white/40 backdrop-blur-md rounded-2xl my-1 border border-white/60 shadow-sm">
+                  <Link href="/products?category=Custom Kaos" onClick={() => { setIsMobileMenuOpen(false); setIsMobilePolosanOpen(false); }} className="py-2 px-2 text-zinc-700 hover:text-black text-[10px] font-bold uppercase flex items-center justify-between border-b border-zinc-200/30">
+                    <span>Kaos</span><span className="text-zinc-400">›</span>
+                  </Link>
+                  <Link href="/products?category=Custom Oversized" onClick={() => { setIsMobileMenuOpen(false); setIsMobilePolosanOpen(false); }} className="py-2 px-2 text-zinc-700 hover:text-black text-[10px] font-bold uppercase flex items-center justify-between border-b border-zinc-200/30">
+                    <span>Oversized</span><span className="text-zinc-400">›</span>
+                  </Link>
+                  <Link href="/products?category=Custom Hoodie" onClick={() => { setIsMobileMenuOpen(false); setIsMobilePolosanOpen(false); }} className="py-2 px-2 text-zinc-700 hover:text-black text-[10px] font-bold uppercase flex items-center justify-between border-b border-zinc-200/30">
+                    <span>Hoodie</span><span className="text-zinc-400">›</span>
+                  </Link>
+                  <Link href="/products?category=Custom Topi" onClick={() => { setIsMobileMenuOpen(false); setIsMobilePolosanOpen(false); }} className="py-2 px-2 text-zinc-700 hover:text-black text-[10px] font-bold uppercase flex items-center justify-between">
+                    <span>Topi</span><span className="text-zinc-400">›</span>
+                  </Link>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1 pt-1 text-[11px] font-semibold">
+              <Link href="/location" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 hover:text-black border-b border-zinc-200/50 transition">
+                <span className="uppercase tracking-wider font-bold">Lokasi Workshop</span>
                 <span className="text-zinc-400">›</span>
               </Link>
 
-              <Link href="/track" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">
-                <span className="uppercase tracking-wider">🔍 Lacak Pesanan</span>
+              <Link href="/track" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 hover:text-black border-b border-zinc-200/50 transition">
+                <span className="uppercase tracking-wider font-bold">🔍 Lacak Pesanan</span>
                 <span className="text-zinc-400">›</span>
               </Link>
 
-              <Link href="/chat" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-red-600 font-black border-b border-zinc-100">
+              <Link href="/chat" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-red-600 font-black border-b border-zinc-200/50 transition">
                 <span className="uppercase tracking-wider">💬 Hubungi Admin</span>
                 <span className="text-red-400">›</span>
               </Link>
 
               {isAdminLoggedIn ? (
                 <>
-                  <Link href="/admin/orders" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">
-                    <span className="flex items-center gap-2.5 uppercase tracking-wider">Admin Panel</span>
+                  <Link href="/admin/orders" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 hover:text-black border-b border-zinc-200/50 transition">
+                    <span className="flex items-center gap-2 uppercase tracking-wider font-bold">Admin Panel</span>
                     <span className="text-zinc-400">›</span>
                   </Link>
                   <button 
                     onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} 
                     className="w-full flex items-center justify-between py-2.5 px-1 text-red-600 font-black cursor-pointer"
                   >
-                    <span className="flex items-center gap-2.5 uppercase tracking-wider">🚪 Keluar Akun</span>
+                    <span className="flex items-center gap-2 uppercase tracking-wider">🚪 Keluar Akun</span>
                     <span>›</span>
                   </button>
                 </>
               ) : (
-                <Link href="/admin/login" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800">
-                  <span className="flex items-center gap-2.5 uppercase tracking-wider">Masuk Akun / Admin</span>
+                <Link href="/admin/login" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 hover:text-black transition">
+                  <span className="flex items-center gap-2 uppercase tracking-wider font-bold">Masuk Akun / Admin</span>
                   <span className="text-zinc-400">›</span>
                 </Link>
               )}
