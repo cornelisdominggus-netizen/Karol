@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DSCPL WEAR - Precision Workshop",
+  title: "DSCPL WEAR - Custom Apparel",
   description: "Pusat Sablon DTF dan Kebutuhan Custom Printing",
 };
 

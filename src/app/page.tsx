@@ -11,9 +11,37 @@ export default function Home() {
   const [allProducts, setAllProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
+  // State untuk Hero Slides dan Pengaturan Toggle dari Supabase
+  const [promoSlides, setPromoSlides] = useState<any[]>([
+    {
+      title: "PREMIUM DTF PRINTING",
+      subtitle: "Kualitas sablon tajam, detail warna akurat, tahan lama & tidak luntur.",
+      tag: "WORKSHOP HIGHLIGHT"
+    }
+  ])
+  const [currentSlide, setCurrentSlide] = useState(0)
+  const [showBannerText, setShowBannerText] = useState(true)
+
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Ambil Produk Pilihan Terbaru (untuk di-swipe)
+      // 1. Ambil data slider dan pengaturan website dari Supabase
+      const [slidesRes, settingsRes] = await Promise.all([
+        supabase.from('hero_slides').select('*'),
+        supabase.from('site_settings').select('data').eq('id', 1).maybeSingle()
+      ])
+
+      if (slidesRes.data && slidesRes.data.length > 0) {
+        setPromoSlides(slidesRes.data)
+      }
+
+      if (settingsRes.data?.data) {
+        const settingsData = settingsRes.data.data as any
+        if (typeof settingsData.showBannerText === 'boolean') {
+          setShowBannerText(settingsData.showBannerText)
+        }
+      }
+
+      // 2. Ambil Produk Pilihan Terbaru
       const { data: latestData } = await supabase
         .from('products')
         .select('*')
@@ -22,7 +50,7 @@ export default function Home() {
 
       if (latestData) setLatestProducts(latestData)
 
-      // 2. Ambil Katalog Keseluruhan (untuk grid ke bawah)
+      // 3. Ambil Katalog Keseluruhan
       const { data: allData } = await supabase
         .from('products')
         .select('*')
@@ -36,6 +64,15 @@ export default function Home() {
 
     fetchData()
   }, [])
+
+  // Auto slide timer
+  useEffect(() => {
+    if (promoSlides.length <= 1) return
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % promoSlides.length)
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [promoSlides.length])
 
   // Kategori Utama
   const categories = [
@@ -77,7 +114,6 @@ export default function Home() {
     }
   ]
 
-  // Komponen Kartu Produk Mungil (Digunakan untuk Swipe maupun Grid)
   const renderProductCard = (prod: any) => {
     let apparelType = 'kaos'
     const cat = prod.category?.toLowerCase() || ''
@@ -121,30 +157,69 @@ export default function Home() {
     )
   }
 
+  const slide = promoSlides[currentSlide] || promoSlides[0]
+
   return (
     <main className="min-h-screen bg-white text-black pb-16">
       
-      {/* 1. MULAI DESAIN (HERO SECTION) */}
-      <section className="bg-zinc-950 text-white py-6 px-6 md:px-12 flex justify-center">
-        <Link
-          href="/custom"
-          className="group w-full max-w-xs bg-white text-black rounded-2xl p-4 flex flex-col items-center justify-center shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
-        >
-          <div className="w-16 h-16 my-2 flex items-center justify-center">
-            <img 
-              src="/art.png" 
-              alt="Mulai Desain" 
-              className="w-full h-full object-contain filter drop-shadow group-hover:rotate-6 transition duration-300" 
-            />
+      {/* HERO SECTION: BANNER HITAM */}
+      <section className="bg-zinc-950 text-white py-12 px-6 md:px-12 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
+          
+          {/* SISI KIRI: MUNCUL JIKA TOGGLE AKTIF & ADA DATA SLIDE */}
+          {showBannerText && promoSlides.length > 0 ? (
+            <div className="flex-1 space-y-4 text-left z-10">
+              <span className="bg-white/10 border border-white/20 text-zinc-300 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+                {slide?.tag || 'WORKSHOP HIGHLIGHT'}
+              </span>
+              <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white leading-tight">
+                {slide?.title || 'PREMIUM DTF PRINTING'}
+              </h1>
+              <p className="text-xs sm:text-sm text-zinc-400 max-w-lg leading-relaxed font-medium">
+                {slide?.subtitle || 'Kualitas sablon tajam, detail warna akurat, tahan lama & tidak luntur.'}
+              </p>
+              <div className="flex items-center gap-2 pt-2">
+                {promoSlides.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setCurrentSlide(idx)}
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      currentSlide === idx ? 'w-8 bg-white' : 'w-2 bg-zinc-700'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="hidden md:block flex-1" />
+          )}
+
+          {/* SISI KANAN: KOTAK "MULAI DESAIN" TTP KOKOH DI KANAN */}
+          <div className="w-full md:w-auto flex justify-end z-10">
+            <Link
+              href="/custom"
+              className="group w-64 h-64 sm:w-72 sm:h-72 bg-white/10 hover:bg-white/20 backdrop-blur-xl border border-white/20 text-white rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl transition-all duration-300 hover:scale-[1.02] cursor-pointer text-center mx-auto md:mx-0"
+            >
+              <div className="w-16 h-16 my-1 flex items-center justify-center brightness-0 invert">
+                <img 
+                  src="/art.png" 
+                  alt="Mulai Desain" 
+                  className="w-full h-full object-contain filter drop-shadow group-hover:rotate-6 transition duration-300" 
+                />
+              </div>
+
+              <h3 className="font-black text-white text-[11px] uppercase tracking-widest mt-1">Custom Studio</h3>
+
+              <div className="w-full mt-3 bg-white text-black hover:bg-zinc-200 font-black text-[11px] py-2.5 px-4 rounded-xl uppercase tracking-widest text-center shadow transition duration-300">
+                Mulai Desain ➔
+              </div>
+            </Link>
           </div>
 
-          <div className="w-full bg-black group-hover:bg-zinc-800 text-white font-black text-[11px] py-2.5 px-4 rounded-xl uppercase tracking-widest text-center shadow transition duration-300">
-            Mulai Desain ➔
-          </div>
-        </Link>
+        </div>
       </section>
 
-      {/* 2. PRODUK PILIHAN TERBARU (SISTEM SWIPE / HORIZONTAL SCROLL) */}
+      {/* 2. PRODUK PILIHAN TERBARU */}
       <section className="max-w-7xl mx-auto px-4 md:px-12 pt-8 space-y-4">
         <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
           <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
@@ -202,7 +277,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 4. PRODUK PILIHAN KESELURUHAN (GRID MUNGIL KE BAWAH) */}
+      {/* 4. PRODUK PILIHAN KESELURUHAN */}
       <section className="max-w-7xl mx-auto px-4 md:px-12 pt-10 space-y-4">
         <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
           <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">

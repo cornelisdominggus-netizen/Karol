@@ -25,6 +25,13 @@ type Product = {
   image: string | null
 }
 
+type HeroSlide = {
+  id: number
+  tag: string
+  title: string
+  subtitle: string
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter()
   const [authed, setAuthed] = useState(false)
@@ -49,12 +56,12 @@ export default function AdminDashboardPage() {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
 
-  // State Pengaturan Website
-  const [siteText, setSiteText] = useState({
-    heroTitle: 'Precision Apparel & Custom Print Workshop',
-    heroDesc: 'Pusat layanan custom apparel, sablon DTF berkualitas tinggi, dan penyediaan polosan standar distro di Depok.',
-    promoAnnouncement: 'Event 99% : Selengkapnya'
-  })
+  // State CMS Hero Slides & Toggle Tampil Teks Banner
+  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([])
+  const [slideTag, setSlideTag] = useState('')
+  const [slideTitle, setSlideTitle] = useState('')
+  const [slideSubtitle, setSlideSubtitle] = useState('')
+  const [showBannerText, setShowBannerText] = useState(true)
 
   useEffect(() => {
     const init = async () => {
@@ -65,17 +72,22 @@ export default function AdminDashboardPage() {
       }
       setAuthed(true)
 
-      const [ordersRes, productsRes, settingsRes, chatsRes] = await Promise.all([
+      const [ordersRes, productsRes, slidesRes, settingsRes, chatsRes] = await Promise.all([
         supabase.from('orders').select('*').order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('created_at', { ascending: false }),
+        supabase.from('hero_slides').select('*'),
         supabase.from('site_settings').select('data').eq('id', 1).maybeSingle(),
         supabase.from('chats').select('room_id').order('created_at', { ascending: false })
       ])
 
       if (ordersRes.data) setOrders(ordersRes.data as Order[])
       if (productsRes.data) setProducts(productsRes.data as Product[])
+      if (slidesRes.data) setHeroSlides(slidesRes.data as HeroSlide[])
       if (settingsRes.data?.data) {
-        setSiteText((prev) => ({ ...prev, ...(settingsRes.data!.data as any) }))
+        const settingsData = settingsRes.data.data as any
+        if (typeof settingsData.showBannerText === 'boolean') {
+          setShowBannerText(settingsData.showBannerText)
+        }
       }
       if (chatsRes.data) {
         const uniqueRooms = Array.from(new Set(chatsRes.data.map((c: any) => c.room_id))) as string[]
@@ -88,7 +100,6 @@ export default function AdminDashboardPage() {
 
     init()
 
-    // REAL-TIME LISTENER UNTUK ADMIN (Orders & Chats)
     const ordersChannel = supabase
       .channel('admin-orders-realtime')
       .on(
@@ -132,7 +143,6 @@ export default function AdminDashboardPage() {
     }
   }, [router, activeRoom])
 
-  // Ambil pesan chat saat room aktif berubah
   useEffect(() => {
     if (!activeRoom) return
     const fetchMessages = async () => {
@@ -155,7 +165,6 @@ export default function AdminDashboardPage() {
     router.replace('/admin/login')
   }
 
-  // Handler Pesanan
   const handleUpdateStatus = async (id: number, newStatus: string) => {
     const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', id)
     if (error) {
@@ -175,7 +184,6 @@ export default function AdminDashboardPage() {
     setOrders(orders.filter((ord) => ord.id !== id))
   }
 
-  // Kirim Balasan Admin ke Chat Pelanggan
   const handleSendAdminReply = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!replyMsg.trim() || !activeRoom) return
@@ -193,20 +201,16 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Helper Ekstrak Hanya 2 Berkas (Desain Depan & Desain Belakang)
   const extractFileUrls = (itemsText: string) => {
     if (!itemsText) return { desFront: '', desBack: '' }
-
     const getUrl = (keyword: string) => {
       const regexBracket = new RegExp(`\\[(?:[^:]*?)${keyword}:\\s*(https?://[^\\]]+)\\]`, 'i')
       let match = itemsText.match(regexBracket)
       if (match) return match[1].trim()
-
       const regexPlain = new RegExp(`${keyword}:\\s*(https?://\\S+)`, 'i')
       match = itemsText.match(regexPlain)
       return match ? match[1].trim().replace(/\|$/, '') : ''
     }
-
     return {
       desFront: getUrl('Desain Depan'),
       desBack: getUrl('Desain Belakang'),
@@ -231,7 +235,6 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Handler Produk dengan Upload File Foto ke Supabase Storage
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTitle || !newPrice) return
@@ -243,34 +246,19 @@ export default function AdminDashboardPage() {
       if (imageFile) {
         const fileExt = imageFile.name.split('.').pop()
         const fileName = `${Date.now()}_prod.${fileExt}`
-        
-        const { error: uploadError } = await supabase.storage
-          .from('designs')
-          .upload(fileName, imageFile)
-
+        const { error: uploadError } = await supabase.storage.from('designs').upload(fileName, imageFile)
         if (uploadError) throw uploadError
-
-        const { data: pubData } = supabase.storage
-          .from('designs')
-          .getPublicUrl(fileName)
-
+        const { data: pubData } = supabase.storage.from('designs').getPublicUrl(fileName)
         imageUrl = pubData.publicUrl
       }
 
       const { data, error } = await supabase
         .from('products')
-        .insert({
-          title: newTitle,
-          price: newPrice,
-          original_price: newOriginalPrice || null,
-          category: newCategory,
-          image: imageUrl
-        })
+        .insert({ title: newTitle, price: newPrice, original_price: newOriginalPrice || null, category: newCategory, image: imageUrl })
         .select()
         .single()
 
       if (error || !data) throw error
-
       setProducts([data as Product, ...products])
       setNewTitle('')
       setNewPrice('')
@@ -294,14 +282,57 @@ export default function AdminDashboardPage() {
     setProducts(products.filter((p) => p.id !== id))
   }
 
-  const handleSaveSettings = async (e: React.FormEvent) => {
+  const handleAddHeroSlide = async (e: React.FormEvent) => {
     e.preventDefault()
-    const { error } = await supabase.from('site_settings').upsert({ id: 1, data: siteText })
-    if (error) {
-      alert('Gagal menyimpan pengaturan website.')
+    if (!slideTitle.trim()) {
+      alert('Judul slider tidak boleh kosong!')
       return
     }
-    alert('Pengaturan website berhasil diperbarui!')
+
+    const { data, error } = await supabase
+      .from('hero_slides')
+      .insert([{ tag: slideTag, title: slideTitle, subtitle: slideSubtitle }])
+      .select()
+      .single()
+
+    if (error || !data) {
+      alert('Gagal menambahkan slider hero.')
+      return
+    }
+
+    setHeroSlides([...heroSlides, data as HeroSlide])
+    setSlideTag('')
+    setSlideTitle('')
+    setSlideSubtitle('')
+    alert('Slider hero berhasil ditambahkan!')
+  }
+
+  const handleDeleteHeroSlide = async (id: number) => {
+    if (!confirm('Hapus slider ini?')) return
+    const { error } = await supabase.from('hero_slides').delete().eq('id', id)
+    if (error) {
+      alert('Gagal menghapus slider.')
+      return
+    }
+    setHeroSlides(heroSlides.filter((s) => s.id !== id))
+  }
+
+  // Handler Toggle Tampilkan / Nonaktifkan Teks Banner
+  const handleToggleBannerText = async (newState: boolean) => {
+    setShowBannerText(newState)
+    
+    // Simpan status toggle ke tabel site_settings Supabase
+    await supabase.from('site_settings').upsert({
+      id: 1,
+      data: { showBannerText: newState }
+    })
+
+    // Jika di-nonaktifkan, kita juga bisa beri opsi menghapus semua teks slide jika diinginkan, atau cukup menyembunyikannya
+    if (!newState) {
+      // Opsional: jika ingin sekaligus menghapus semua data di tabel hero_slides
+      // await supabase.from('hero_slides').delete().neq('id', 0)
+      // setHeroSlides([])
+    }
   }
 
   if (!authed) {
@@ -328,10 +359,7 @@ export default function AdminDashboardPage() {
             <Link href="/products" className="flex-1 sm:flex-none text-center bg-white text-black text-xs font-bold px-4 py-2.5 rounded-xl transition hover:bg-gray-100">
               Lihat Website Toko ➔
             </Link>
-            <button
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer"
-            >
+            <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition cursor-pointer">
               Keluar
             </button>
           </div>
@@ -339,47 +367,24 @@ export default function AdminDashboardPage() {
 
         {/* Tab Navigasi Admin */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-gray-200">
-          <button
-            onClick={() => setActiveTab('orders')}
-            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
-              activeTab === 'orders' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
-            }`}
-          >
+          <button onClick={() => setActiveTab('orders')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'orders' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-150'}`}>
             📦 Manajemen Pesanan ({orders.length})
           </button>
-          <button
-            onClick={() => setActiveTab('chats')}
-            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
-              activeTab === 'chats' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
-            }`}
-          >
+          <button onClick={() => setActiveTab('chats')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'chats' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-150'}`}>
             💬 Live Chat Pembeli ({chatRooms.length})
           </button>
-          <button
-            onClick={() => setActiveTab('products')}
-            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
-              activeTab === 'products' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
-            }`}
-          >
+          <button onClick={() => setActiveTab('products')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'products' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-150'}`}>
             🛍️ Upload & Kelola Katalog ({products.length})
           </button>
-          <button
-            onClick={() => setActiveTab('settings')}
-            className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${
-              activeTab === 'settings' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'
-            }`}
-          >
-            ⚙️ CMS Editor Teks Web
+          <button onClick={() => setActiveTab('settings')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'settings' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-150'}`}>
+            ⚙️ CMS Banner Slider Hero ({heroSlides.length})
           </button>
         </div>
 
         {/* TAB 1: MANAJEMEN PESANAN */}
         {activeTab === 'orders' && (
           <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">
-              Daftar Pesanan Masuk Pelanggan (Supabase Database Real-Time)
-            </h2>
-
+            <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">Daftar Pesanan Masuk Pelanggan</h2>
             {orders.length === 0 ? (
               <div className="text-center py-16 space-y-2">
                 <span className="text-4xl">📭</span>
@@ -402,87 +407,51 @@ export default function AdminDashboardPage() {
                     {orders.map((ord) => {
                       const cleanItemsText = ord.items ? ord.items.split('||')[0] : ''
                       const urls = extractFileUrls(ord.items)
-
                       return (
                         <tr key={ord.id} className="hover:bg-gray-50">
                           <td className="p-3 font-mono text-gray-500 align-top">
                             #{ord.id}
-                            <span className="block text-[10px] text-gray-400">
-                              {new Date(ord.created_at).toLocaleString('id-ID')}
-                            </span>
+                            <span className="block text-[10px] text-gray-400">{new Date(ord.created_at).toLocaleString('id-ID')}</span>
                           </td>
-
                           <td className="p-3 align-top">
                             <p className="font-bold text-black uppercase">{ord.customer_name}</p>
                             <p className="text-[11px] text-gray-500">{ord.phone}</p>
                             <p className="text-[10px] text-gray-400 max-w-[180px]">{ord.address}</p>
                           </td>
-
                           <td className="p-3 align-top space-y-3 max-w-xs">
                             <p className="font-semibold text-black">{cleanItemsText}</p>
-
-                            {/* 2 Kolom Berkas Desain Depan & Belakang */}
                             <div className="grid grid-cols-2 gap-3 pt-1 max-w-[280px]">
-                              
-                              {/* 1. Desain Depan */}
                               <div className="bg-gray-50 p-2.5 rounded-xl border text-center space-y-1.5">
                                 <span className="text-[9px] font-black text-gray-600 block">Desain Depan</span>
                                 {urls.desFront ? (
                                   <>
-                                    <a href={urls.desFront} target="_blank" rel="noreferrer">
-                                      <img src={urls.desFront} alt="Desain Depan" className="w-full h-20 object-contain rounded bg-white border hover:scale-105 transition" />
-                                    </a>
-                                    <button onClick={() => handleDownloadFile(urls.desFront, `desain-depan-${ord.id}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">
-                                      📥 Download
-                                    </button>
+                                    <a href={urls.desFront} target="_blank" rel="noreferrer"><img src={urls.desFront} alt="" className="w-full h-20 object-contain rounded bg-white border" /></a>
+                                    <button onClick={() => handleDownloadFile(urls.desFront, `depan-${ord.id}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">📥 Download</button>
                                   </>
-                                ) : (
-                                  <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>
-                                )}
+                                ) : <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>}
                               </div>
-
-                              {/* 2. Desain Belakang */}
                               <div className="bg-gray-50 p-2.5 rounded-xl border text-center space-y-1.5">
                                 <span className="text-[9px] font-black text-gray-600 block">Desain Belakang</span>
                                 {urls.desBack ? (
                                   <>
-                                    <a href={urls.desBack} target="_blank" rel="noreferrer">
-                                      <img src={urls.desBack} alt="Desain Belakang" className="w-full h-20 object-contain rounded bg-white border hover:scale-105 transition" />
-                                    </a>
-                                    <button onClick={() => handleDownloadFile(urls.desBack, `desain-belakang-${ord.id}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">
-                                      📥 Download
-                                    </button>
+                                    <a href={urls.desBack} target="_blank" rel="noreferrer"><img src={urls.desBack} alt="" className="w-full h-20 object-contain rounded bg-white border" /></a>
+                                    <button onClick={() => handleDownloadFile(urls.desBack, `belakang-${ord.id}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">📥 Download</button>
                                   </>
-                                ) : (
-                                  <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>
-                                )}
+                                ) : <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>}
                               </div>
-
                             </div>
                           </td>
-
                           <td className="p-3 font-black text-red-600 align-top whitespace-nowrap">{ord.total_price}</td>
-                          
                           <td className="p-3 align-top">
-                            <select
-                              value={ord.status}
-                              onChange={(e) => handleUpdateStatus(ord.id, e.target.value)}
-                              className="font-bold px-3 py-1.5 rounded-xl border text-xs focus:outline-none bg-yellow-50 text-yellow-700 border-yellow-200 cursor-pointer"
-                            >
+                            <select value={ord.status} onChange={(e) => handleUpdateStatus(ord.id, e.target.value)} className="font-bold px-3 py-1.5 rounded-xl border text-xs bg-yellow-50 text-yellow-700 cursor-pointer">
                               <option value="Pending">Pending</option>
                               <option value="Diproses">Diproses</option>
                               <option value="Dikirim">Dikirim</option>
                               <option value="Selesai">Selesai</option>
                             </select>
                           </td>
-
                           <td className="p-3 text-center align-top whitespace-nowrap">
-                            <button
-                              onClick={() => handleDeleteOrder(ord.id)}
-                              className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer"
-                            >
-                              Hapus
-                            </button>
+                            <button onClick={() => handleDeleteOrder(ord.id)} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer">Hapus</button>
                           </td>
                         </tr>
                       )
@@ -499,115 +468,56 @@ export default function AdminDashboardPage() {
           <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-[500px]">
             <div className="md:col-span-4 border-r border-gray-200 pr-4 space-y-2">
               <h3 className="text-xs font-black uppercase tracking-wider text-gray-500 mb-3">Daftar Ruang Chat Pembeli</h3>
-              {chatRooms.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">Belum ada chat masuk.</p>
-              ) : (
-                chatRooms.map((room) => (
-                  <button
-                    key={room}
-                    onClick={() => setActiveRoom(room)}
-                    className={`w-full text-left px-4 py-3 rounded-2xl text-xs font-bold transition cursor-pointer ${
-                      activeRoom === room ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100 text-black'
-                    }`}
-                  >
-                    Room ID: {room}
-                  </button>
-                ))
-              )}
+              {chatRooms.length === 0 ? <p className="text-xs text-gray-400 italic">Belum ada chat masuk.</p> : chatRooms.map((room) => (
+                <button key={room} onClick={() => setActiveRoom(room)} className={`w-full text-left px-4 py-3 rounded-2xl text-xs font-bold transition cursor-pointer ${activeRoom === room ? 'bg-black text-white' : 'bg-gray-50 hover:bg-gray-100 text-black'}`}>
+                  Room ID: {room}
+                </button>
+              ))}
             </div>
-
             <div className="md:col-span-8 flex flex-col justify-between">
-              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-xs">
-                {activeRoom ? `Percakapan di Room: ${activeRoom}` : 'Pilih room chat di samping'}
-              </div>
-
+              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-bold text-xs">{activeRoom ? `Percakapan di Room: ${activeRoom}` : 'Pilih room chat'}</div>
               <div className="flex-1 p-4 overflow-y-auto space-y-3 max-h-[380px]">
-                {messages.map((m, idx) => {
-                  const isAdmin = m.sender === 'admin'
-                  return (
-                    <div key={idx} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs font-bold ${
-                        isAdmin ? 'bg-black text-white' : 'bg-white border text-black shadow-sm'
-                      }`}>
-                        <p className="text-[9px] opacity-60 mb-0.5">{isAdmin ? 'Anda (Admin)' : 'Pembeli'}</p>
-                        {m.message}
-                      </div>
+                {messages.map((m, idx) => (
+                  <div key={idx} className={`flex ${m.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-xs font-bold ${m.sender === 'admin' ? 'bg-black text-white' : 'bg-white border text-black shadow-sm'}`}>
+                      <p className="text-[9px] opacity-60 mb-0.5">{m.sender === 'admin' ? 'Anda (Admin)' : 'Pembeli'}</p>
+                      {m.message}
                     </div>
-                  )
-                })}
+                  </div>
+                ))}
                 <div ref={messagesEndRef} />
               </div>
-
               {activeRoom && (
                 <form onSubmit={handleSendAdminReply} className="pt-3 border-t border-gray-200 flex gap-2">
-                  <input
-                    type="text"
-                    value={replyMsg}
-                    onChange={(e) => setReplyMsg(e.target.value)}
-                    placeholder="Balas pesan pembeli..."
-                    className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs font-semibold text-black focus:outline-none focus:border-black"
-                  />
-                  <button type="submit" className="bg-black text-white text-xs font-black px-5 py-2.5 rounded-xl uppercase tracking-wider transition cursor-pointer">
-                    Kirim
-                  </button>
+                  <input type="text" value={replyMsg} onChange={(e) => setReplyMsg(e.target.value)} placeholder="Balas pesan pembeli..." className="flex-1 bg-gray-50 border rounded-xl px-4 py-2.5 text-xs font-semibold text-black focus:outline-none" />
+                  <button type="submit" className="bg-black text-white text-xs font-black px-5 py-2.5 rounded-xl uppercase tracking-wider cursor-pointer">Kirim</button>
                 </form>
               )}
             </div>
           </div>
         )}
 
-        {/* TAB 2: TAMBAH & KELOLA KATALOG */}
+        {/* TAB 2: PRODUK */}
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-            
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-              <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">
-                + Tambah Produk & Upload Foto
-              </h2>
-
+              <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">+ Tambah Produk & Upload Foto</h2>
               <form onSubmit={handleAddProduct} className="space-y-3 text-xs">
                 <div>
                   <label className="block font-bold mb-1">Nama Produk *</label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: Custom Kaos Kerajaan"
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
-                    required
-                  />
+                  <input type="text" placeholder="Contoh: Custom Kaos Kerajaan" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
                 </div>
-
                 <div>
                   <label className="block font-bold mb-1">Harga Jual Diskon *</label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: Rp 70.000"
-                    value={newPrice}
-                    onChange={(e) => setNewPrice(e.target.value)}
-                    className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
-                    required
-                  />
+                  <input type="text" placeholder="Contoh: Rp 70.000" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
                 </div>
-
                 <div>
                   <label className="block font-bold mb-1">Harga Asli / Coret (Opsional)</label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: Rp 150.000"
-                    value={newOriginalPrice}
-                    onChange={(e) => setNewOriginalPrice(e.target.value)}
-                    className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
-                  />
+                  <input type="text" placeholder="Contoh: Rp 150.000" value={newOriginalPrice} onChange={(e) => setNewOriginalPrice(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" />
                 </div>
-
                 <div>
                   <label className="block font-bold mb-1">Kategori</label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black cursor-pointer"
-                  >
+                  <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black cursor-pointer">
                     <option value="Custom Kaos">Custom Kaos</option>
                     <option value="Custom Oversized">Custom Oversized</option>
                     <option value="Custom Hoodie">Custom Hoodie</option>
@@ -615,110 +525,103 @@ export default function AdminDashboardPage() {
                     <option value="Polosan">Polosan</option>
                   </select>
                 </div>
-
                 <div>
                   <label className="block font-bold mb-1">Upload Foto Contoh Baju</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                    className="w-full bg-gray-50 border rounded-xl p-2 text-xs font-semibold text-black file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-black file:text-white hover:file:bg-zinc-800 cursor-pointer"
-                  />
+                  <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files?.[0] || null)} className="w-full bg-gray-50 border rounded-xl p-2 text-xs font-semibold text-black file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-black file:text-white cursor-pointer" />
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={uploadingImage}
-                  className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer"
-                >
+                <button type="submit" disabled={uploadingImage} className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer">
                   {uploadingImage ? 'Mengunggah & Menyimpan...' : 'SIMPAN & TAYANGKAN REAL-TIME'}
                 </button>
               </form>
             </div>
-
             <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-              <h2 className="text-sm font-black uppercase tracking-wider text-black border-b pb-2">
-                Daftar Katalog Aktif ({products.length})
-              </h2>
-
+              <h2 className="text-sm font-black uppercase tracking-wider text-black border-b pb-2">Daftar Katalog Aktif ({products.length})</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
                 {products.map((p) => (
                   <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border flex items-center justify-between gap-3">
-                    {p.image && (
-                      <img src={p.image} alt="" className="w-14 h-14 object-cover rounded-xl bg-white shadow-sm flex-shrink-0" />
-                    )}
+                    {p.image && <img src={p.image} alt="" className="w-14 h-14 object-cover rounded-xl bg-white shadow-sm flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-red-600 font-black">{p.price}</span>
-                        {p.original_price && (
-                          <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>
-                        )}
+                        {p.original_price && <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>}
                       </div>
                       <span className="text-[10px] bg-black text-white px-2 py-0.5 rounded-full">{p.category}</span>
                     </div>
-                    <button
-                      onClick={() => handleDeleteProduct(p.id)}
-                      className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer"
-                    >
-                      Hapus
-                    </button>
+                    <button onClick={() => handleDeleteProduct(p.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer">Hapus</button>
                   </div>
                 ))}
               </div>
             </div>
-
           </div>
         )}
 
-        {/* TAB 3: PENGATURAN CMS */}
+        {/* TAB 3: CMS BANNER SLIDER HERO DENGAN TOGGLE */}
         {activeTab === 'settings' && (
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-6 max-w-2xl">
-            <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">
-              ⚙️ Pengaturan CMS & Promo Website
-            </h2>
-
-            <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
+          <div className="space-y-6">
+            
+            {/* TOGGLE SECTION */}
+            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex items-center justify-between">
               <div>
-                <label className="block font-bold mb-1">Judul Utama Hero (Beranda)</label>
-                <input
-                  type="text"
-                  value={siteText.heroTitle}
-                  onChange={(e) => setSiteText({ ...siteText, heroTitle: e.target.value })}
-                  className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
-                  required
-                />
+                <h3 className="text-sm font-black uppercase tracking-wider text-black">Status Tampilkan Teks Banner Hero</h3>
+                <p className="text-xs text-gray-400 mt-0.5">Aktifkan untuk menampilkan teks slide promo di halaman utama. Nonaktifkan untuk menyembunyikan / mengosongkan teks banner.</p>
               </div>
-
-              <div>
-                <label className="block font-bold mb-1">Deskripsi Hero (Beranda)</label>
-                <textarea
-                  rows={3}
-                  value={siteText.heroDesc}
-                  onChange={(e) => setSiteText({ ...siteText, heroDesc: e.target.value })}
-                  className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
-                  required
-                ></textarea>
-              </div>
-
-              <div>
-                <label className="block font-bold mb-1">Pengumuman Promo / Event / Banner</label>
-                <input
-                  type="text"
-                  value={siteText.promoAnnouncement}
-                  onChange={(e) => setSiteText({ ...siteText, promoAnnouncement: e.target.value })}
-                  className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
-                  required
-                />
-              </div>
-
+              
+              {/* Toggle Switch Button */}
               <button
-                type="submit"
-                className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer"
+                onClick={() => handleToggleBannerText(!showBannerText)}
+                className={`w-14 h-8 flex items-center rounded-full p-1 transition-colors duration-300 cursor-pointer ${
+                  showBannerText ? 'bg-black' : 'bg-gray-300'
+                }`}
               >
-                SIMPAN PERUBAHAN WEBSITE
+                <div className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-transform duration-300 ${
+                  showBannerText ? 'translate-x-6' : 'translate-x-0'
+                }`} />
               </button>
-            </form>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+              
+              {/* Form Tambah Slide */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
+                <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">+ Tambah Slide Banner Hero Baru</h2>
+                <form onSubmit={handleAddHeroSlide} className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold mb-1">Tag Banner (Kecil di Atas)</label>
+                    <input type="text" placeholder="Contoh: WORKSHOP HIGHLIGHT" value={slideTag} onChange={(e) => setSlideTag(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">Judul Utama Slider *</label>
+                    <input type="text" placeholder="Contoh: PREMIUM DTF PRINTING" value={slideTitle} onChange={(e) => setSlideTitle(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1">Sub-Judul / Keterangan *</label>
+                    <textarea rows={3} placeholder="Kualitas sablon tajam, detail warna akurat..." value={slideSubtitle} onChange={(e) => setSlideSubtitle(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required></textarea>
+                  </div>
+                  <button type="submit" className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer">
+                    SIMPAN SLIDER BARU
+                  </button>
+                </form>
+              </div>
+
+              {/* Daftar Slide Aktif */}
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
+                <h2 className="text-sm font-black uppercase tracking-wider text-black border-b pb-2">Daftar Slider Hero Aktif ({heroSlides.length})</h2>
+                <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
+                  {heroSlides.length === 0 ? <p className="text-xs text-gray-400 italic">Belum ada slide banner.</p> : heroSlides.map((slide) => (
+                    <div key={slide.id} className="bg-gray-50 p-4 rounded-2xl border flex items-center justify-between gap-3">
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <span className="text-[9px] bg-black text-white px-2 py-0.5 rounded-full font-bold uppercase">{slide.tag}</span>
+                        <h4 className="font-black text-xs text-black uppercase">{slide.title}</h4>
+                        <p className="text-[11px] text-gray-500 line-clamp-1">{slide.subtitle}</p>
+                      </div>
+                      <button onClick={() => handleDeleteHeroSlide(slide.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer">Hapus</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
           </div>
         )}
 
