@@ -166,7 +166,7 @@ function CustomStudio() {
     }
   }
 
-  // FUNGSI SIMPAN KE KERANJANG ANTI-QUOTA EXCEEDED
+  // SIMPAN KE KERANJANG BESERTA DATA GAMBAR DESAINNYA
   const handleAddToCart = async () => {
     if (!designs.front.image && !designs.back.image) {
       alert('Harap unggah minimal satu desain sablon (depan atau belakang) terlebih dahulu!')
@@ -176,8 +176,6 @@ function CustomStudio() {
     setLoading(true)
 
     try {
-      const filesDesc = SIDES.filter((s) => designs[s].name).map((s) => `${SIDE_LABEL[s]}: ${designs[s].name}`).join(' | ')
-
       const newItem = {
         cartId: Date.now(),
         id: Date.now(),
@@ -186,9 +184,11 @@ function CustomStudio() {
         size: size,
         quantity: quantity,
         image: 'Custom 3D Apparel',
-        imageFront: designs.front.name ? `Desain Depan: ${designs.front.name}` : null,
-        imageBack: designs.back.name ? `Desain Belakang: ${designs.back.name}` : null,
-        designFile: filesDesc,
+        // Menyimpan data gambar & nama file langsung agar terbawa otomatis ke checkout
+        frontDesignImage: designs.front.image,
+        frontDesignName: designs.front.name,
+        backDesignImage: designs.back.image,
+        backDesignName: designs.back.name,
       }
 
       let existingCart = []
@@ -203,7 +203,6 @@ function CustomStudio() {
       try {
         localStorage.setItem('dscpl_cart', JSON.stringify(updatedCart))
       } catch (storageError) {
-        // Jika storage penuh, reset dan simpan item terbaru saja
         localStorage.setItem('dscpl_cart', JSON.stringify([newItem]))
       }
 
@@ -249,10 +248,6 @@ function CustomStudio() {
               transform: `translate(${d.x * 60}px, ${-d.y * 60}px)`,
             }}
           >
-            <div className="absolute -top-1 -left-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
-            <div className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
-            <div className="absolute -bottom-1 -left-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
-            <div className="absolute -bottom-1 -right-1 w-1.5 h-1.5 bg-white border border-blue-600 rounded-full"></div>
             <img src={d.image} alt={`Desain ${SIDE_LABEL[side]}`} className="w-full h-full object-contain pointer-events-none" />
           </div>
         ) : (
@@ -279,7 +274,6 @@ function CustomStudio() {
               <button
                 onClick={handleDownload3DPreview}
                 className="bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-bold px-3 py-1 rounded-full transition cursor-pointer flex items-center gap-1"
-                title="Download gambar 3D sisi yang sedang dilihat"
               >
                 📥 Download Preview
               </button>

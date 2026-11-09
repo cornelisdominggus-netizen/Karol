@@ -7,18 +7,30 @@ import { supabase } from '@/lib/supabase'
 
 export default function Home() {
   const router = useRouter()
-  const [products, setProducts] = useState<any[]>([])
+  const [latestProducts, setLatestProducts] = useState<any[]>([])
+  const [allProducts, setAllProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
-      const { data: prodData } = await supabase
+      // 1. Ambil Produk Pilihan Terbaru (untuk di-swipe)
+      const { data: latestData } = await supabase
         .from('products')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(8)
 
-      if (prodData) setProducts(prodData)
+      if (latestData) setLatestProducts(latestData)
+
+      // 2. Ambil Katalog Keseluruhan (untuk grid ke bawah)
+      const { data: allData } = await supabase
+        .from('products')
+        .select('*')
+        .order('title', { ascending: true })
+        .limit(8)
+
+      if (allData) setAllProducts(allData)
+
       setLoading(false)
     }
 
@@ -65,16 +77,59 @@ export default function Home() {
     }
   ]
 
+  // Komponen Kartu Produk Mungil (Digunakan untuk Swipe maupun Grid)
+  const renderProductCard = (prod: any) => {
+    let apparelType = 'kaos'
+    const cat = prod.category?.toLowerCase() || ''
+    const title = prod.title?.toLowerCase() || ''
+    if (cat.includes('hoodie') || title.includes('hoodie')) apparelType = 'hoodie'
+    else if (cat.includes('topi') || title.includes('topi')) apparelType = 'topi'
+    else if (cat.includes('tas') || title.includes('tas')) apparelType = 'tas'
+    else if (cat.includes('oversize') || title.includes('oversize')) apparelType = 'oversized'
+
+    return (
+      <div
+        key={prod.id}
+        onClick={() => router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
+        className="group bg-white border border-zinc-200/80 hover:border-black rounded-2xl p-2 flex flex-col justify-between cursor-pointer transition shadow-sm w-full"
+      >
+        <div className="relative w-full h-36 bg-zinc-100 rounded-xl overflow-hidden">
+          <span className="absolute top-2 left-2 bg-black text-white text-[7px] font-black px-1.5 py-0.5 rounded-full z-10 uppercase">
+            {prod.category}
+          </span>
+          {prod.image && (
+            <img src={prod.image} alt={prod.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+          )}
+        </div>
+
+        <div className="pt-2 px-1 space-y-1">
+          <h4 className="font-bold text-[11px] text-zinc-900 line-clamp-1">{prod.title}</h4>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-zinc-950">{prod.price}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
+              }
+              className="bg-black hover:bg-zinc-800 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider transition"
+            >
+              Custom
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-white text-black pb-16">
       
-      {/* 1. HERO SECTION: KOTAK PUTIH DENGAN TOMBOL HITAM */}
+      {/* 1. MULAI DESAIN (HERO SECTION) */}
       <section className="bg-zinc-950 text-white py-6 px-6 md:px-12 flex justify-center">
         <Link
           href="/custom"
           className="group w-full max-w-xs bg-white text-black rounded-2xl p-4 flex flex-col items-center justify-center shadow-xl transition-all duration-300 hover:scale-[1.02] cursor-pointer"
         >
-          {/* Ikon Palet Lukis / Desain */}
           <div className="w-16 h-16 my-2 flex items-center justify-center">
             <img 
               src="/art.png" 
@@ -83,18 +138,17 @@ export default function Home() {
             />
           </div>
 
-          {/* Tombol Hitam dengan Teks Putih */}
           <div className="w-full bg-black group-hover:bg-zinc-800 text-white font-black text-[11px] py-2.5 px-4 rounded-xl uppercase tracking-widest text-center shadow transition duration-300">
             Mulai Desain ➔
           </div>
         </Link>
       </section>
 
-      {/* 2. PRODUK PILIHAN (UKURAN KARTU LEBIH KECIL & PROPOSIONAL) */}
+      {/* 2. PRODUK PILIHAN TERBARU (SISTEM SWIPE / HORIZONTAL SCROLL) */}
       <section className="max-w-7xl mx-auto px-4 md:px-12 pt-8 space-y-4">
         <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
           <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
-            Produk Pilihan
+            Produk Pilihan Terbaru
           </h2>
           <Link href="/products" className="text-[11px] font-bold text-zinc-400 hover:text-black transition">
             Katalog Lengkap ➔
@@ -103,52 +157,15 @@ export default function Home() {
 
         {loading ? (
           <div className="py-10 text-center text-xs font-bold text-zinc-400">Memuat produk...</div>
-        ) : products.length === 0 ? (
+        ) : latestProducts.length === 0 ? (
           <div className="py-10 text-center text-xs text-zinc-400">Belum ada produk.</div>
         ) : (
           <div className="flex gap-3 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            {products.map((prod) => {
-              let apparelType = 'kaos'
-              const cat = prod.category?.toLowerCase() || ''
-              const title = prod.title?.toLowerCase() || ''
-              if (cat.includes('hoodie') || title.includes('hoodie')) apparelType = 'hoodie'
-              else if (cat.includes('topi') || title.includes('topi')) apparelType = 'topi'
-              else if (cat.includes('tas') || title.includes('tas')) apparelType = 'tas'
-              else if (cat.includes('oversize') || title.includes('oversize')) apparelType = 'oversized'
-
-              return (
-                <div
-                  key={prod.id}
-                  onClick={() => router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
-                  className="group w-[170px] sm:w-[190px] flex-shrink-0 bg-white border border-zinc-200/80 hover:border-black rounded-2xl p-2 flex flex-col justify-between cursor-pointer transition shadow-sm snap-start"
-                >
-                  <div className="relative w-full h-36 bg-zinc-100 rounded-xl overflow-hidden">
-                    <span className="absolute top-2 left-2 bg-black text-white text-[7px] font-black px-1.5 py-0.5 rounded-full z-10 uppercase">
-                      {prod.category}
-                    </span>
-                    {prod.image && (
-                      <img src={prod.image} alt={prod.title} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
-                    )}
-                  </div>
-
-                  <div className="pt-2 px-1 space-y-1">
-                    <h4 className="font-bold text-[11px] text-zinc-900 line-clamp-1">{prod.title}</h4>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black text-zinc-950">{prod.price}</span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          router.push(`/custom?type=${apparelType}&id=${prod.id}`)}
-                        }
-                        className="bg-black hover:bg-zinc-800 text-white text-[8px] font-bold px-2 py-1 rounded-lg uppercase tracking-wider transition"
-                      >
-                        Custom
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+            {latestProducts.map((prod) => (
+              <div key={prod.id} className="w-[170px] sm:w-[190px] flex-shrink-0 snap-start">
+                {renderProductCard(prod)}
+              </div>
+            ))}
           </div>
         )}
       </section>
@@ -183,6 +200,28 @@ export default function Home() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* 4. PRODUK PILIHAN KESELURUHAN (GRID MUNGIL KE BAWAH) */}
+      <section className="max-w-7xl mx-auto px-4 md:px-12 pt-10 space-y-4">
+        <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
+          <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
+            Produk Pilihan Keseluruhan
+          </h2>
+          <Link href="/products" className="text-[11px] font-bold text-zinc-400 hover:text-black transition">
+            Lihat Semua ➔
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="py-10 text-center text-xs font-bold text-zinc-400">Memuat produk...</div>
+        ) : allProducts.length === 0 ? (
+          <div className="py-10 text-center text-xs text-zinc-400">Belum ada produk.</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+            {allProducts.map(renderProductCard)}
+          </div>
+        )}
       </section>
 
     </main>

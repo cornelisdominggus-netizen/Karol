@@ -5,8 +5,6 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
-const STUDIO_PATH = '/custom'
-
 export default function Navbar() {
   const router = useRouter()
   const [isCartOpen, setIsCartOpen] = useState(false)
@@ -95,10 +93,11 @@ export default function Navbar() {
   return (
     <header className="w-full bg-white border-b border-zinc-100 sticky top-0 z-50">
 
-      <div className="max-w-7xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3 relative">
+      {/* HEADER UTAMA SATU BARIS (DESKTOP) */}
+      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 relative">
         
-        {/* Kiri: Tombol Hamburger (Hanya muncul di Mobile) & Logo Brushstroke */}
-        <div className="flex items-center gap-3">
+        {/* Kiri: Logo DSCPL & Kolom Pencarian Produk */}
+        <div className="flex items-center gap-4 flex-shrink-0">
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden w-9 h-9 flex items-center justify-center rounded-full bg-zinc-100 text-black hover:bg-zinc-200 transition focus:outline-none cursor-pointer"
@@ -111,102 +110,132 @@ export default function Navbar() {
             <img 
               src="/logo-dscpl.png" 
               alt="DSCPL WEAR" 
-              className="h-8 md:h-10 w-auto object-contain" 
+              className="h-8 md:h-9 w-auto object-contain" 
             />
           </Link>
+
+          {/* Kolom Pencarian Tepat di Sebelah Logo */}
+          <form onSubmit={handleSearchSubmit} className="w-56 lg:w-72 hidden md:block">
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Cari produk..."
+                className="w-full bg-zinc-50 text-xs text-black rounded-full py-2 pl-3.5 pr-8 border border-zinc-200 focus:outline-none focus:border-black transition"
+              />
+              <button type="submit" className="absolute right-2.5 top-2 text-zinc-400 text-xs cursor-pointer">🔍</button>
+            </div>
+          </form>
         </div>
 
-        {/* Form Pencarian Desktop */}
-        <form onSubmit={handleSearchSubmit} className="flex-1 max-w-xl hidden md:block">
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari produk..."
-              className="w-full bg-zinc-50 text-sm text-black rounded-full py-2 pl-4 pr-10 border border-zinc-200 focus:outline-none focus:border-black transition"
-            />
-            <button type="submit" className="absolute right-3 top-2.5 text-zinc-400 cursor-pointer">🔍</button>
-          </div>
-        </form>
-
-        {/* Kanan (Desktop) */}
-        <div className="flex items-center space-x-2 md:space-x-3 relative">
-
-          <Link
-            href={STUDIO_PATH}
-            className="hidden sm:inline-block bg-red-600 hover:bg-red-700 text-white text-xs font-black px-5 py-2.5 rounded-full transition whitespace-nowrap uppercase tracking-widest shadow-sm"
-          >
-            🎨 Mulai Desain
-          </Link>
+        {/* Kanan: Menu Navigasi (Font lebih kecil: text-[9px]) & Keranjang/Masuk di bawahnya */}
+        <div className="hidden lg:flex flex-col items-end space-y-1 flex-shrink-0">
           
-          {/* Keranjang Desktop */}
-          <div 
-            className="relative hidden md:block"
-            onMouseEnter={() => setIsCartOpen(true)}
-            onMouseLeave={() => setIsCartOpen(false)}
-          >
-            <Link href="/checkout" className="bg-zinc-50 hover:bg-zinc-100 text-black px-4 py-2 rounded-full text-xs font-bold transition border border-zinc-200 flex items-center gap-1.5 shadow-sm">
-              🛒 Keranjang <span className="bg-black text-white px-1.5 py-0.5 rounded-full text-[10px]">{cart.length}</span>
-            </Link>
-
-            {isCartOpen && (
-              <div className="absolute right-0 top-full w-80 bg-white shadow-2xl rounded-3xl border border-zinc-100 p-4 z-50 space-y-4">
-                <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
-                  {cart.length === 0 ? (
-                    <p className="text-xs text-center text-zinc-400 py-4 font-medium">Keranjang belanja kosong.</p>
-                  ) : (
-                    cart.map((item, idx) => (
-                      <div key={item.cartId ?? idx} className="flex items-center gap-3 border-b border-zinc-100 pb-3">
-                        {item.image && (
-                          <img src={item.image} alt="" className="w-10 h-10 object-cover rounded-xl bg-zinc-50 flex-shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-xs text-black truncate">{item.title}</h4>
-                          <p className="text-[11px] text-zinc-500">{item.quantity} x {item.price}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="border-t border-zinc-100 pt-3 flex justify-between items-center text-xs font-black">
-                  <span>Subtotal:</span>
-                  <span className="text-red-600">Rp {subtotal.toLocaleString('id-ID')}</span>
-                </div>
-
-                <div className="space-y-2 pt-1">
-                  <Link href="/checkout" className="block text-center bg-black hover:bg-zinc-800 text-white text-xs font-black py-3 rounded-2xl uppercase tracking-wider transition shadow">
-                    LIHAT KERANJANG
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Tombol Masuk / Admin Desktop */}
-          {isAdminLoggedIn ? (
-            <div className="hidden md:flex items-center gap-1.5">
-              <Link href="/admin/orders" className="bg-black text-white text-xs font-black px-4 py-2 rounded-full hover:bg-zinc-800 transition">
-                ⚙️ Admin
+          {/* Menu Navigasi (Sangat Mungil di Atas Keranjang & Masuk) */}
+          <nav className="flex items-center space-x-3.5 text-[9px] font-black uppercase tracking-wider text-zinc-600">
+            {/* Dropdown Katalog */}
+            <div 
+              className="relative py-0.5"
+              onMouseEnter={() => setIsCustomDropdownOpen(true)}
+              onMouseLeave={() => setIsCustomDropdownOpen(false)}
+            >
+              <Link href="/products" className="flex items-center gap-0.5 hover:text-red-600 transition cursor-pointer">
+                {siteText.navCustom} ▾
               </Link>
-              <button
-                onClick={handleLogout}
-                className="bg-red-50 text-red-600 font-bold px-3 py-2 rounded-full text-xs border border-red-200 cursor-pointer"
-                title="Keluar"
-              >
-                Keluar
-              </button>
+
+              {isCustomDropdownOpen && (
+                <div className="absolute top-full right-0 w-40 bg-white shadow-2xl rounded-2xl border border-zinc-100 py-2 z-50 space-y-1">
+                  <Link href="/products?category=Custom Kaos" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Kaos</Link>
+                  <Link href="/products?category=Custom Oversized" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Oversized</Link>
+                  <Link href="/products?category=Custom Hoodie" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Hoodie</Link>
+                  <Link href="/products?category=Custom Topi" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Topi</Link>
+                  <Link href="/products?category=Custom Tas" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Tas</Link>
+                  <Link href="/products?category=Custom Merchandise" className="block px-4 py-1.5 hover:bg-zinc-50 text-black text-[9px] font-bold">Merchandise</Link>
+                </div>
+              )}
             </div>
-          ) : (
-            <Link href="/admin/login" className="hidden md:inline-block bg-black text-white text-xs font-bold px-4.5 py-2 rounded-full hover:bg-zinc-800 transition whitespace-nowrap shadow-sm">
-              MASUK
-            </Link>
-          )}
+
+            <Link href="/products?category=Polosan" className="hover:text-red-600 transition">{siteText.navPolosan}</Link>
+            <Link href="/location" className="hover:text-red-600 transition">{siteText.navLocation}</Link>
+            <Link href="/track" className="text-red-600 hover:text-black transition">🔍 Lacak</Link>
+          </nav>
+
+          {/* Keranjang & Tombol Masuk / Admin */}
+          <div className="flex items-center space-x-2 relative">
+
+            {/* Keranjang Desktop */}
+            <div 
+              className="relative hidden md:block"
+              onMouseEnter={() => setIsCartOpen(true)}
+              onMouseLeave={() => setIsCartOpen(false)}
+            >
+              <Link href="/checkout" className="bg-zinc-50 hover:bg-zinc-100 text-black px-3 py-1.5 rounded-full text-xs font-bold transition border border-zinc-200 flex items-center gap-1.5 shadow-sm">
+                🛒 <span className="bg-black text-white px-1.5 py-0.5 rounded-full text-[10px]">{cart.length}</span>
+              </Link>
+
+              {isCartOpen && (
+                <div className="absolute right-0 top-full w-80 bg-white shadow-2xl rounded-3xl border border-zinc-100 p-4 z-50 space-y-4">
+                  <div className="max-h-60 overflow-y-auto space-y-3 pr-1">
+                    {cart.length === 0 ? (
+                      <p className="text-xs text-center text-zinc-400 py-4 font-medium">Keranjang belanja kosong.</p>
+                    ) : (
+                      cart.map((item, idx) => (
+                        <div key={item.cartId ?? idx} className="flex items-center gap-3 border-b border-zinc-100 pb-3">
+                          {item.frontDesignImage ? (
+                            <img src={item.frontDesignImage} alt="" className="w-10 h-10 object-contain rounded-xl bg-zinc-50 border flex-shrink-0 p-0.5" />
+                          ) : (
+                            <div className="w-10 h-10 bg-zinc-100 rounded-xl flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <h4 className="font-bold text-xs text-black truncate">{item.title}</h4>
+                            <p className="text-[11px] text-zinc-500">{item.quantity} x {item.price}</p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="border-t border-zinc-100 pt-3 flex justify-between items-center text-xs font-black">
+                    <span>Subtotal:</span>
+                    <span className="text-red-600">Rp {subtotal.toLocaleString('id-ID')}</span>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <Link href="/checkout" className="block text-center bg-black hover:bg-zinc-800 text-white text-xs font-black py-3 rounded-2xl uppercase tracking-wider transition shadow">
+                      LIHAT KERANJANG
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Tombol Masuk / Admin Desktop */}
+            {isAdminLoggedIn ? (
+              <div className="hidden md:flex items-center gap-1.5">
+                <Link href="/admin/orders" className="bg-black text-white text-xs font-black px-3 py-1.5 rounded-full hover:bg-zinc-800 transition">
+                  ⚙️ Admin
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="bg-red-50 text-red-600 font-bold px-2.5 py-1.5 rounded-full text-xs border border-red-200 cursor-pointer"
+                  title="Keluar"
+                >
+                  Keluar
+                </button>
+              </div>
+            ) : (
+              <Link href="/admin/login" className="hidden md:inline-block bg-black text-white text-xs font-bold px-3.5 py-1.5 rounded-full hover:bg-zinc-800 transition whitespace-nowrap shadow-sm">
+                MASUK
+              </Link>
+            )}
+
+          </div>
 
         </div>
       </div>
 
+      {/* Form Pencarian Mobile */}
       <div className="px-4 pb-3 md:hidden">
         <form onSubmit={handleSearchSubmit} className="relative">
           <input
@@ -220,44 +249,11 @@ export default function Navbar() {
         </form>
       </div>
 
-      {/* Menu Desktop */}
-      <div className="border-t border-zinc-100 bg-white hidden md:block">
-        <div className="max-w-7xl mx-auto px-4 flex items-center space-x-8 text-xs font-black uppercase tracking-widest text-black py-3">
-          
-          <div 
-            className="relative"
-            onMouseEnter={() => setIsCustomDropdownOpen(true)}
-            onMouseLeave={() => setIsCustomDropdownOpen(false)}
-          >
-            <Link href="/products" className="flex items-center gap-1 py-1 hover:text-red-600 transition cursor-pointer">
-              {siteText.navCustom} ▾
-            </Link>
-
-            {isCustomDropdownOpen && (
-              <div className="absolute top-full left-0 w-56 bg-white shadow-2xl rounded-3xl border border-zinc-100 py-3 z-50 space-y-1">
-                <Link href="/products?category=Custom Kaos" className="block px-5 py-2 hover:bg-zinc-50 text-black text-xs font-bold">Kaos</Link>
-                <Link href="/products?category=Custom Oversized" className="block px-5 py-2 hover:bg-zinc-50 text-black text-xs font-bold">Oversized</Link>
-                <Link href="/products?category=Custom Hoodie" className="block px-5 py-2 hover:bg-zinc-50 text-black text-xs font-bold">Hoodie</Link>
-                <Link href="/products?category=Custom Topi" className="block px-5 py-2 hover:bg-zinc-50 text-black text-xs font-bold">Topi</Link>
-                <Link href="/products?category=Custom Tas" className="block px-5 py-2 hover:bg-zinc-50 text-black text-xs font-bold">Tas</Link>
-                <Link href="/products?category=Custom Merchandise" className="block px-5 py-2 hover:bg-zinc-50 text-black text-xs font-bold">Merchandise</Link>
-              </div>
-            )}
-          </div>
-
-          <Link href="/products?category=Polosan" className="hover:text-red-600 transition">{siteText.navPolosan}</Link>
-          <Link href="/location" className="hover:text-red-600 transition">{siteText.navLocation}</Link>
-          <Link href="/track" className="text-red-600 hover:text-black transition">🔍 Lacak Pesanan</Link>
-
-        </div>
-      </div>
-
       {/* Menu Mobile (Hanya tampil di HP) */}
       {isMobileMenuOpen && (
         <div className="md:hidden bg-white border-t border-zinc-100 px-6 py-6 space-y-5 shadow-2xl animate-fadeIn">
           <div className="flex flex-col space-y-3 text-xs font-bold text-black">
             
-            {/* Tombol Keranjang di Menu Kiri */}
             <Link 
               href="/checkout" 
               onClick={() => setIsMobileMenuOpen(false)} 
@@ -267,7 +263,6 @@ export default function Navbar() {
               <span className="bg-black text-white px-2 py-0.5 rounded-full text-[10px]">{cart.length}</span>
             </Link>
 
-            {/* Katalog Dropdown */}
             <div className="border-b border-zinc-100 pb-2">
               <button
                 onClick={() => setIsMobileCatalogOpen(!isMobileCatalogOpen)}
@@ -287,7 +282,6 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Menu Navigasi Lainnya termasuk Profil Elegan */}
             <div className="space-y-2 text-xs font-bold">
               <Link href="/products?category=Polosan" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">
                 <span className="uppercase tracking-wider">Polosan Standar Distro</span>
@@ -304,7 +298,6 @@ export default function Navbar() {
                 <span className="text-red-400">›</span>
               </Link>
 
-              {/* Menu Profil Elegan Pengganti Tombol Besar */}
               {isAdminLoggedIn ? (
                 <>
                   <Link href="/admin/orders" onClick={() => setIsMobileMenuOpen(false)} className="flex items-center justify-between py-2.5 px-1 text-zinc-800 border-b border-zinc-100">

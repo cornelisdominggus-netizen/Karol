@@ -123,21 +123,23 @@ export default function AdminDashboardPage() {
     setOrders(orders.filter((ord) => ord.id !== id))
   }
 
-  // Helper Ekstrak 4 Berkas Studio dari Database
+  // Helper Ekstrak Hanya 2 Berkas (Desain Depan & Desain Belakang)
   const extractFileUrls = (itemsText: string) => {
-    if (!itemsText) return { desFront: '', desBack: '', mockFront: '', mockBack: '' }
+    if (!itemsText) return { desFront: '', desBack: '' }
 
     const getUrl = (keyword: string) => {
-      const regex = new RegExp(`\\[${keyword}:\\s*(https?://[^\\]]+)\\]`)
-      const match = itemsText.match(regex)
-      return match ? match[1].trim() : ''
+      const regexBracket = new RegExp(`\\[(?:[^:]*?)${keyword}:\\s*(https?://[^\\]]+)\\]`, 'i')
+      let match = itemsText.match(regexBracket)
+      if (match) return match[1].trim()
+
+      const regexPlain = new RegExp(`${keyword}:\\s*(https?://\\S+)`, 'i')
+      match = itemsText.match(regexPlain)
+      return match ? match[1].trim().replace(/\|$/, '') : ''
     }
 
     return {
       desFront: getUrl('Desain Depan'),
       desBack: getUrl('Desain Belakang'),
-      mockFront: getUrl('Mockup Depan') || getUrl('Mockup 3D Depan'),
-      mockBack: getUrl('Mockup Belakang') || getUrl('Mockup 3D Belakang'),
     }
   }
 
@@ -307,12 +309,12 @@ export default function AdminDashboardPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[850px]">
+                <table className="w-full text-left text-xs min-w-[750px]">
                   <thead>
                     <tr className="border-b bg-gray-50 text-gray-500 uppercase">
                       <th className="p-3">ID / Waktu</th>
                       <th className="p-3">Pelanggan</th>
-                      <th className="p-3">Detail Item & 4 Berkas Studio</th>
+                      <th className="p-3">Detail Item & Berkas Desain</th>
                       <th className="p-3">Total Harga</th>
                       <th className="p-3">Status</th>
                       <th className="p-3 text-center">Aksi</th>
@@ -338,77 +340,43 @@ export default function AdminDashboardPage() {
                             <p className="text-[10px] text-gray-400 max-w-[180px]">{ord.address}</p>
                           </td>
 
-                          <td className="p-3 align-top space-y-3 max-w-sm">
+                          <td className="p-3 align-top space-y-3 max-w-xs">
                             <p className="font-semibold text-black">{cleanItemsText}</p>
 
-                            {/* 4 Kolom Berkas Preview & Download */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                            {/* 2 Kolom Berkas Desain Depan & Belakang */}
+                            <div className="grid grid-cols-2 gap-3 pt-1 max-w-[280px]">
                               
                               {/* 1. Desain Depan */}
-                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
-                                <span className="text-[8px] font-black text-gray-600 block">Desain Depan</span>
+                              <div className="bg-gray-50 p-2.5 rounded-xl border text-center space-y-1.5">
+                                <span className="text-[9px] font-black text-gray-600 block">Desain Depan</span>
                                 {urls.desFront ? (
                                   <>
                                     <a href={urls.desFront} target="_blank" rel="noreferrer">
-                                      <img src={urls.desFront} alt="Desain Depan" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
+                                      <img src={urls.desFront} alt="Desain Depan" className="w-full h-20 object-contain rounded bg-white border hover:scale-105 transition" />
                                     </a>
-                                    <button onClick={() => handleDownloadFile(urls.desFront, `desain-depan-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
+                                    <button onClick={() => handleDownloadFile(urls.desFront, `desain-depan-${ord.id}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">
                                       📥 Download
                                     </button>
                                   </>
                                 ) : (
-                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
+                                  <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>
                                 )}
                               </div>
 
                               {/* 2. Desain Belakang */}
-                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
-                                <span className="text-[8px] font-black text-gray-600 block">Desain Belakang</span>
+                              <div className="bg-gray-50 p-2.5 rounded-xl border text-center space-y-1.5">
+                                <span className="text-[9px] font-black text-gray-600 block">Desain Belakang</span>
                                 {urls.desBack ? (
                                   <>
                                     <a href={urls.desBack} target="_blank" rel="noreferrer">
-                                      <img src={urls.desBack} alt="Desain Belakang" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
+                                      <img src={urls.desBack} alt="Desain Belakang" className="w-full h-20 object-contain rounded bg-white border hover:scale-105 transition" />
                                     </a>
-                                    <button onClick={() => handleDownloadFile(urls.desBack, `desain-belakang-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
+                                    <button onClick={() => handleDownloadFile(urls.desBack, `desain-belakang-${ord.id}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">
                                       📥 Download
                                     </button>
                                   </>
                                 ) : (
-                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
-                                )}
-                              </div>
-
-                              {/* 3. Mockup 3D Depan */}
-                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
-                                <span className="text-[8px] font-black text-gray-600 block">Mockup 3D Depan</span>
-                                {urls.mockFront ? (
-                                  <>
-                                    <a href={urls.mockFront} target="_blank" rel="noreferrer">
-                                      <img src={urls.mockFront} alt="Mockup Depan" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
-                                    </a>
-                                    <button onClick={() => handleDownloadFile(urls.mockFront, `mockup-depan-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
-                                      📥 Download
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
-                                )}
-                              </div>
-
-                              {/* 4. Mockup 3D Belakang */}
-                              <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
-                                <span className="text-[8px] font-black text-gray-600 block">Mockup 3D Belakang</span>
-                                {urls.mockBack ? (
-                                  <>
-                                    <a href={urls.mockBack} target="_blank" rel="noreferrer">
-                                      <img src={urls.mockBack} alt="Mockup Belakang" className="w-full h-14 object-contain rounded bg-white border hover:scale-105 transition" />
-                                    </a>
-                                    <button onClick={() => handleDownloadFile(urls.mockBack, `mockup-belakang-${ord.id}.png`)} className="w-full bg-black text-white text-[8px] font-bold py-1 rounded cursor-pointer">
-                                      📥 Download
-                                    </button>
-                                  </>
-                                ) : (
-                                  <span className="text-[9px] text-gray-400 block py-3">-</span>
+                                  <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>
                                 )}
                               </div>
 
