@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -16,6 +16,17 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
 
+  const [destinationAreaId, setDestinationAreaId] = useState('')
+  const [areaQuery, setAreaQuery] = useState('')
+  const [areaResults, setAreaResults] = useState<any[]>([])
+  const [courierRates, setCourierRates] = useState<any[]>([])
+  const [selectedRate, setSelectedRate] = useState<any>(null)
+  const [shippingCost, setShippingCost] = useState(0)
+  const [fetchingRates, setFetchingRates] = useState(false)
+
+  const [shippingError, setShippingError] = useState('')
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const [agree, setAgree] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -30,6 +41,112 @@ export default function CheckoutPage() {
     window.addEventListener('dscpl_cart_updated', loadCart)
     return () => window.removeEventListener('dscpl_cart_updated', loadCart)
   }, [])
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value
+    setAreaQuery(query)
+
+    setDestinationAreaId('')
+    setCourierRates([])
+    setSelectedRate(null)
+    setShippingCost(0)
+    setShippingError('')
+
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+
+    if (query.trim().length < 3) {
+      setAreaResults([])
+      return
+    }
+
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/biteship/areas?input=${encodeURIComponent(query.trim())}`)
+        const data = await res.json()
+
+        if (!res.ok || data.error) {
+          setAreaResults([])
+          setShippingError(data.error || 'Pencarian kecamatan gagal.')
+          return
+        }
+
+        const results = data.areas || []
+        setAreaResults(results)
+        if (results.length === 0) {
+          setShippingError('Kecamatan tidak ditemukan. Coba ketik nama kecamatannya saja, misalnya "Sukmajaya".')
+        }
+      } catch (err) {
+        console.error('Error fetching areas:', err)
+        setAreaResults([])
+        setShippingError('Tidak bisa terhubung ke server ongkir.')
+      }
+    }, 400)
+  }
+
+  const handleSelectArea = async (area: any) => {
+    const areaName = area.name || area.label || 'Kecamatan Terpilih'
+    setDestinationAreaId(area.id || area.area_id)
+    setAreaQuery(areaName)
+    setAreaResults([])
+    setCity(area.city || area.administrative_division_level_2_name || 'Depok')
+    setProvince(area.administrative_division_level_1_name || area.province_name || 'Jawa Barat')
+
+    await fetchBiteshipRates(area.id || area.area_id)
+  }
+
+  const fetchBiteshipRates = async (targetAreaId: string) => {
+    setFetchingRates(true)
+    setCourierRates([])
+    setSelectedRate(null)
+    setShippingCost(0)
+    setShippingError('')
+
+    try {
+      const res = await fetch('/api/biteship/rates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          destination_area_id: targetAreaId,
+          items: cart.length > 0
+            ? cart.map((i) => ({
+                name: i.title,
+                value: parseInt(String(i.price).replace(/[^0-9]/g, '')) || 50000,
+                quantity: i.quantity || 1,
+                weight: i.weight || 250
+              }))
+            : [{ name: 'Custom Apparel', value: 65000, quantity: 1, weight: 250 }]
+        })
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || data.error) {
+        setShippingError(data.error || 'Gagal mengambil tarif kurir.')
+        return
+      }
+
+      const pricingList: any[] = data.pricing || []
+      if (pricingList.length === 0) {
+        setShippingError('Tidak ada layanan kurir yang tersedia untuk area ini.')
+        return
+      }
+
+      pricingList.sort((a, b) => a.price - b.price)
+      setCourierRates(pricingList)
+      setSelectedRate(pricingList[0])
+      setShippingCost(pricingList[0].price)
+    } catch (err) {
+      console.error('Error fetching rates:', err)
+      setShippingError('Tidak bisa terhubung ke server ongkir.')
+    } finally {
+      setFetchingRates(false)
+    }
+  }
+
+  const handleSelectCourierRate = (rate: any) => {
+    setSelectedRate(rate)
+    setShippingCost(rate.price)
+  }
 
   const handleQuantityChange = (cartId: string, delta: number) => {
     const updated = cart.map(item => {
@@ -56,8 +173,7 @@ export default function CheckoutPage() {
     return acc + (p * (item.quantity || 1))
   }, 0)
 
-  const shippingCost = cart.length > 0 ? 15000 : 0
-  const totalNum = subtotalNum + shippingCost
+  const totalNum = subtotalNum + (cart.length > 0 ? shippingCost : 0)
 
   const dataURLtoFile = (dataurl: string, filename: string) => {
     try {
@@ -79,15 +195,11 @@ export default function CheckoutPage() {
     if (!fileObj) return null
     const fileName = `${folderPrefix}_${Date.now()}_${Math.random().toString(36).substring(2)}.png`
     
-    // Pastikan Anda sudah membuat Public Bucket bernama 'designs' di Supabase Storage Anda!
     const { error } = await supabase.storage.from('designs').upload(fileName, fileObj, {
       contentType: fileObj.type,
       upsert: true
     })
-    if (error) {
-      console.error(`Gagal upload ${folderPrefix}:`, error.message)
-      return null
-    }
+    if (error) return null
 
     const { data } = supabase.storage.from('designs').getPublicUrl(fileName)
     return data?.publicUrl || null
@@ -99,8 +211,16 @@ export default function CheckoutPage() {
       alert('Keranjang Anda masih kosong!')
       return
     }
+    if (!destinationAreaId) {
+      alert('Silakan pilih kecamatan/kota tujuan dari dropdown hasil pencarian!')
+      return
+    }
+    if (!selectedRate) {
+      alert('Silakan pilih kurir pengiriman.')
+      return
+    }
     if (!agree) {
-      alert('Harap setujui syarat & ketentuan terlebih dahulu.')
+      alert('Harap setujui syarat & ketentuan.')
       return
     }
 
@@ -109,7 +229,6 @@ export default function CheckoutPage() {
     try {
       const processedCart = []
 
-      // Upload file desain ke Supabase Storage supaya admin bisa mendownloadnya dengan mudah
       for (const item of cart) {
         let frontUrl = item.frontDesignImage || null
         let backUrl = item.backDesignImage || null
@@ -130,50 +249,69 @@ export default function CheckoutPage() {
           ...item,
           frontDesignImage: frontUrl,
           backDesignImage: backUrl,
-          image: frontUrl || item.image
+          image: frontUrl || item.image || item.frontDesignImage
         })
       }
 
-      const itemsSummary = processedCart.map(i => `${i.title} (Ukuran: ${i.size}) x${i.quantity}`).join(' | ')
+      const itemsSummary = processedCart.map(i => `• ${i.title} (Ukuran: ${i.size}) x${i.quantity}`).join('\n')
       const totalPriceStr = 'Rp ' + totalNum.toLocaleString('id-ID')
+      const chosenCourierStr = `${selectedRate.courier_name.toUpperCase()} - ${selectedRate.courier_service_name} (Estimasi ${selectedRate.duration})`
 
-      // Simpan ke Supabase. Kolom 'items' menyimpan array JSON agar halaman admin bisa merender tombol download desain
-      const { error } = await supabase
+      // 1. Simpan ke Supabase untuk mendapatkan ID Pesanan asli secara otomatis
+      const { data: insertedOrder, error } = await supabase
         .from('orders')
         .insert([
           {
             customer_name: name || 'Pelanggan DSCPL',
             phone: phone || '-',
-            address: `${address}, ${city}, ${province}`,
-            items: processedCart, // Menyimpan format JSON array lengkap dengan link gambar storage
+            address: `${address}, ${city}, ${province} [Kurir: ${chosenCourierStr}, Ongkir: Rp ${shippingCost.toLocaleString('id-ID')}]`,
+            items: processedCart,
             total_price: totalPriceStr,
             status: 'Pending'
           }
         ])
+        .select('id')
+        .single()
 
       if (error) {
-        console.error('Supabase Insert Error:', error)
-        alert('Gagal menyimpan pesanan ke database: ' + error.message)
+        alert('Gagal menyimpan pesanan: ' + error.message)
         setLoading(false)
         return
       }
+
+      const orderId = insertedOrder?.id || 'BARU'
 
       localStorage.removeItem('dscpl_cart')
       setCart([])
       window.dispatchEvent(new Event('dscpl_cart_updated'))
 
-      const adminWhatsAppNumber = '6285697211657'
-      const designLinksText = processedCart.map(i => `• ${i.title}%0A  - Depan: ${i.frontDesignImage || 'Tidak ada'}%0A  - Belakang: ${i.backDesignImage || 'Tidak ada'}`).join('%0A')
-      const waMessage = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:%0A%0A*Nama*: ${name}%0A*No HP*: ${phone}%0A*Alamat*: ${address}, ${city}, ${province}%0A*Pesanan*:%0A${itemsSummary}%0A%0A*LINK BERKAS DESAIN*:%0A${designLinksText}%0A%0A*Total Pembayaran*: ${totalPriceStr}`
+      const adminWhatsAppNumber = '62895345414336' // Nomor WhatsApp resmi DSCPL WEAR
+      const designLinksText = processedCart.map(i => `• ${i.title}\n  - Depan: ${i.frontDesignImage || 'Tidak ada'}\n  - Belakang: ${i.backDesignImage || 'Tidak ada'}`).join('\n')
+      
+      // 2. Format pesan WhatsApp otomatis terisi lengkap dengan ID pesanan, data pembeli, dan rincian harga
+      const messageText = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:
 
-      window.open(`https://wa.me/${adminWhatsAppNumber}?text=${waMessage}`, '_blank')
+*ID Pesanan*: #${orderId}
+*Nama*: ${name}
+*No HP*: ${phone}
+*Alamat*: ${address}, ${city}, ${province}
+*Kurir*: ${chosenCourierStr} (Ongkir: Rp ${shippingCost.toLocaleString('id-ID')})
 
-      alert('Pesanan & berkas desain berhasil dikirim!')
+*Pesanan*:
+${itemsSummary}
+
+*LINK BERKAS DESAIN*:
+${designLinksText}
+
+*Total Pembayaran*: ${totalPriceStr}`
+
+      window.open(`https://wa.me/${adminWhatsAppNumber}?text=${encodeURIComponent(messageText)}`, '_blank')
+
+      alert(`Pesanan #${orderId} berhasil dibuat & otomatis terkirim ke WhatsApp Admin!`)
       router.replace('/')
 
     } catch (err: any) {
-      console.error('Error:', err)
-      alert('Terjadi kesalahan sistem saat memproses pesanan.')
+      alert('Terjadi kesalahan sistem.')
     } finally {
       setLoading(false)
     }
@@ -185,10 +323,10 @@ export default function CheckoutPage() {
         
         <div className="border-b border-zinc-200 pb-6">
           <span className="text-[10px] font-black uppercase tracking-[0.3em] text-red-600 block mb-1">
-            SECURE CHECKOUT
+            SECURE CHECKOUT & BITESHIP PRO API
           </span>
           <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight text-zinc-950">
-            Penyelesaian Pesanan
+            Penyelesaian Pesanan & Cek Ongkir Otomatis
           </h1>
         </div>
 
@@ -197,7 +335,7 @@ export default function CheckoutPage() {
           <div className="lg:col-span-7 bg-zinc-50/70 p-6 md:p-8 rounded-3xl shadow-sm border border-zinc-200/80 space-y-6">
             <div className="border-b border-zinc-200 pb-3">
               <h2 className="text-xs font-black uppercase tracking-[0.2em] text-red-600">
-                1. Informasi Pengiriman
+                1. Informasi Pengiriman dari Workshop Depok
               </h2>
             </div>
 
@@ -250,30 +388,65 @@ export default function CheckoutPage() {
                 ></textarea>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Provinsi</label>
-                  <select
-                    value={province}
-                    onChange={(e) => setProvince(e.target.value)}
-                    className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm"
-                  >
-                    <option value="Jawa Barat">Jawa Barat</option>
-                    <option value="DKI Jakarta">DKI Jakarta</option>
-                    <option value="Banten">Banten</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Kota / Kecamatan *</label>
-                  <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    placeholder="Contoh: Depok"
-                    className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm"
-                    required
-                  />
-                </div>
+              {/* SEARCH AREA */}
+              <div className="relative">
+                <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Cari Kecamatan / Kota Tujuan (Wajib Pilih dari Dropdown) *</label>
+                <input
+                  type="text"
+                  value={areaQuery}
+                  onChange={handleSearchChange}
+                  placeholder="Ketik minimal 3 huruf (Contoh: Sukmajaya, Depok)..."
+                  className="w-full bg-white border border-zinc-300 rounded-2xl p-3.5 font-bold text-black focus:outline-none focus:border-black transition shadow-sm relative z-10"
+                  required
+                />
+                
+                {areaResults.length > 0 && (
+                  <div className="absolute z-[99999] left-0 right-0 top-full mt-2 bg-white border-2 border-black rounded-2xl shadow-2xl max-h-60 overflow-y-auto">
+                    {areaResults.map((area, idx) => (
+                      <div
+                        key={area.id || area.area_id || idx}
+                        onClick={() => handleSelectArea(area)}
+                        className="p-3.5 hover:bg-black hover:text-white cursor-pointer border-b border-zinc-100 text-xs font-bold transition"
+                      >
+                        <p className="font-black">{area.name || area.label}</p>
+                        <p className="text-[10px] opacity-80 mt-0.5">
+                          {area.administrative_division_level_3_name || area.district_name || ''}, {area.administrative_division_level_2_name || area.city_name || ''}, {area.administrative_division_level_1_name || area.province_name || ''}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* LIST KURIR */}
+              <div>
+                <label className="block font-black text-zinc-900 mb-1.5 uppercase tracking-wider text-[10px]">Pilih Layanan Kurir Real-Time (Biteship) *</label>
+                {fetchingRates ? (
+                  <div className="p-4 bg-white border border-zinc-300 rounded-2xl text-center text-xs font-bold text-zinc-500 animate-pulse">
+                    Menghitung tarif ongkir real-time dari Biteship...
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {courierRates.map((rate, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectCourierRate(rate)}
+                        className={`p-3.5 rounded-2xl border cursor-pointer transition flex items-center justify-between ${selectedRate?.courier_code === rate.courier_code && selectedRate?.courier_service_code === rate.courier_service_code ? 'border-black bg-black text-white' : 'border-zinc-300 bg-white text-zinc-900 hover:border-zinc-400'}`}
+                      >
+                        <div>
+                          <p className="font-black uppercase text-xs">{rate.courier_name} — {rate.courier_service_name}</p>
+                          <p className={`text-[10px] ${selectedRate?.courier_code === rate.courier_code && selectedRate?.courier_service_code === rate.courier_service_code ? 'text-zinc-300' : 'text-zinc-500'}`}>Estimasi: {rate.duration}</p>
+                        </div>
+                        <p className={`font-black text-xs ${selectedRate?.courier_code === rate.courier_code && selectedRate?.courier_service_code === rate.courier_service_code ? 'text-red-400' : 'text-red-600'}`}>
+                          Rp {rate.price.toLocaleString('id-ID')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {shippingError && (
+                  <p className="mt-2 text-[11px] font-bold text-red-600">{shippingError}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-zinc-200 bg-emerald-50 p-4 rounded-2xl border border-emerald-200 text-emerald-900 space-y-1">
@@ -328,12 +501,21 @@ export default function CheckoutPage() {
               ) : (
                 cart.map((item) => (
                   <div key={item.cartId} className="bg-white p-4 rounded-2xl border border-zinc-200/80 space-y-3 shadow-sm">
-                    <div className="flex items-center justify-between gap-3 border-b border-zinc-100 pb-3">
-                      <div className="min-w-0">
+                    <div className="flex items-center gap-3 border-b border-zinc-100 pb-3">
+                      
+                      <div className="w-14 h-14 bg-zinc-100 rounded-xl overflow-hidden border border-zinc-200 flex-shrink-0 flex items-center justify-center p-1">
+                        {item.image || item.frontDesignImage ? (
+                          <img src={item.image || item.frontDesignImage} alt={item.title} className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="text-[9px] text-zinc-400">No Image</span>
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
                         <h4 className="font-black text-xs text-zinc-900 truncate">{item.title}</h4>
                         <p className="text-[10px] text-zinc-500 font-semibold">Ukuran: {item.size} | Qty: {item.quantity}</p>
+                        <p className="font-black text-xs text-red-600 mt-0.5">{item.price}</p>
                       </div>
-                      <span className="font-black text-xs text-red-600 flex-shrink-0">{item.price}</span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 pt-1">
@@ -372,7 +554,7 @@ export default function CheckoutPage() {
                 <span className="text-zinc-900 font-bold">Rp {subtotalNum.toLocaleString('id-ID')}</span>
               </div>
               <div className="flex justify-between font-bold text-zinc-600">
-                <span>Pengiriman</span>
+                <span>Ongkir ({selectedRate ? `${selectedRate.courier_name} ${selectedRate.courier_service_name}` : 'Biteship'})</span>
                 <span className="text-zinc-900 font-bold">Rp {shippingCost.toLocaleString('id-ID')}</span>
               </div>
               <div className="flex justify-between font-black text-sm pt-3 border-t border-zinc-200">

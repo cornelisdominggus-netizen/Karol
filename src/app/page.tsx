@@ -11,12 +11,13 @@ export default function Home() {
   const [allProducts, setAllProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  // State untuk Hero Slides dan Pengaturan Toggle dari Supabase
-  const [promoSlides, setPromoSlides] = useState<any[]>([
+  // State untuk Multi-Slide Banner Gambar + Teks dari Supabase
+  const [bannerSlides, setBannerSlides] = useState<any[]>([
     {
       title: "PREMIUM DTF PRINTING",
       subtitle: "Kualitas sablon tajam, detail warna akurat, tahan lama & tidak luntur.",
-      tag: "WORKSHOP HIGHLIGHT"
+      tag: "WORKSHOP HIGHLIGHT",
+      image_url: null
     }
   ])
   const [currentSlide, setCurrentSlide] = useState(0)
@@ -24,14 +25,14 @@ export default function Home() {
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Ambil data slider dan pengaturan website dari Supabase
-      const [slidesRes, settingsRes] = await Promise.all([
-        supabase.from('hero_slides').select('*'),
+      // 1. Ambil data banner slides dan pengaturan website dari Supabase
+      const [bannersRes, settingsRes] = await Promise.all([
+        supabase.from('hero_banners').select('*').order('created_at', { ascending: true }),
         supabase.from('site_settings').select('data').eq('id', 1).maybeSingle()
       ])
 
-      if (slidesRes.data && slidesRes.data.length > 0) {
-        setPromoSlides(slidesRes.data)
+      if (bannersRes.data && bannersRes.data.length > 0) {
+        setBannerSlides(bannersRes.data)
       }
 
       if (settingsRes.data?.data) {
@@ -65,14 +66,14 @@ export default function Home() {
     fetchData()
   }, [])
 
-  // Auto slide timer
+  // Auto slide timer (berganti otomatis setiap 4 detik)
   useEffect(() => {
-    if (promoSlides.length <= 1) return
+    if (bannerSlides.length <= 1) return
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % promoSlides.length)
+      setCurrentSlide((prev) => (prev + 1) % bannerSlides.length)
     }, 4000)
     return () => clearInterval(timer)
-  }, [promoSlides.length])
+  }, [bannerSlides.length])
 
   // Kategori Utama
   const categories = [
@@ -117,7 +118,6 @@ export default function Home() {
   const renderProductCard = (prod: any) => {
     const cat = (prod.category || '').toLowerCase()
     
-    // Deteksi apakah produk ini murni produk custom 3D atau produk jadi/kategori baru (seperti Christmas Series)
     const isCustom3D = 
       cat.includes('custom kaos') || 
       cat.includes('custom oversized') || 
@@ -134,7 +134,6 @@ export default function Home() {
     else if (cat.includes('tas')) apparelType = 'tas'
     else if (cat.includes('oversize')) apparelType = 'oversized'
 
-    // Jika produk kustom 3D ke /custom, jika produk baru/siap pakai langsung ke detail produk biasa (/products/[id])
     const targetUrl = isCustom3D 
       ? `/custom?type=${apparelType}&id=${prod.id}` 
       : `/products/${prod.id}`
@@ -173,33 +172,42 @@ export default function Home() {
     )
   }
 
-  const slide = promoSlides[currentSlide] || promoSlides[0]
+  const activeSlide = bannerSlides[currentSlide] || bannerSlides[0]
 
   return (
     <main className="min-h-screen bg-white text-black pb-16">
       
-      {/* HERO SECTION: BANNER HITAM */}
-      <section className="bg-zinc-950 text-white py-12 px-6 md:px-12 relative overflow-hidden">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
+      {/* HERO SECTION: MULTI-SLIDE BANNER DINAMIS */}
+      <section className="bg-zinc-950 text-white py-12 px-6 md:px-12 relative overflow-hidden min-h-[340px] flex items-center">
+        
+        {/* Background Gambar Slide Aktif */}
+        {activeSlide?.image_url && (
+          <div className="absolute inset-0 z-0 transition-opacity duration-1000">
+            <img src={activeSlide.image_url} alt="Banner" className="w-full h-full object-cover opacity-50" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/50 to-transparent" />
+          </div>
+        )}
+
+        <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
           
-          {/* SISI KIRI: MUNCUL JIKA TOGGLE AKTIF & ADA DATA SLIDE */}
-          {showBannerText && promoSlides.length > 0 ? (
+          {/* SISI KIRI: TEKS SLIDE */}
+          {showBannerText && bannerSlides.length > 0 ? (
             <div className="flex-1 space-y-4 text-left z-10">
               <span className="bg-white/10 border border-white/20 text-zinc-300 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
-                {slide?.tag || 'WORKSHOP HIGHLIGHT'}
+                {activeSlide?.tag || 'WORKSHOP HIGHLIGHT'}
               </span>
               <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white leading-tight">
-                {slide?.title || 'PREMIUM DTF PRINTING'}
+                {activeSlide?.title || 'PREMIUM DTF PRINTING'}
               </h1>
-              <p className="text-xs sm:text-sm text-zinc-400 max-w-lg leading-relaxed font-medium">
-                {slide?.subtitle || 'Kualitas sablon tajam, detail warna akurat, tahan lama & tidak luntur.'}
+              <p className="text-xs sm:text-sm text-zinc-300 max-w-lg leading-relaxed font-medium">
+                {activeSlide?.subtitle || 'Kualitas sablon tajam, detail warna akurat, tahan lama & tidak luntur.'}
               </p>
               <div className="flex items-center gap-2 pt-2">
-                {promoSlides.map((_, idx) => (
+                {bannerSlides.map((_, idx) => (
                   <button
                     key={idx}
                     onClick={() => setCurrentSlide(idx)}
-                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                    className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
                       currentSlide === idx ? 'w-8 bg-white' : 'w-2 bg-zinc-700'
                     }`}
                   />
@@ -210,22 +218,16 @@ export default function Home() {
             <div className="hidden md:block flex-1" />
           )}
 
-          {/* SISI KANAN: KOTAK "MULAI DESAIN" TTP KOKOH DI KANAN */}
+          {/* SISI KANAN: KOTAK "MULAI DESAIN" */}
           <div className="w-full md:w-auto flex justify-end z-10">
             <Link
               href="/custom"
-              className="group w-64 h-64 sm:w-72 sm:h-72 bg-white/10 hover:bg-white/20 backdrop-blur-xl border border-white/20 text-white rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl transition-all duration-300 hover:scale-[1.02] cursor-pointer text-center mx-auto md:mx-0"
+              className="group w-64 h-64 sm:w-72 sm:h-72 bg-white/15 hover:bg-white/25 backdrop-blur-xl border border-white/20 text-white rounded-3xl p-6 flex flex-col items-center justify-center shadow-2xl transition-all duration-300 hover:scale-[1.02] cursor-pointer text-center mx-auto md:mx-0"
             >
               <div className="w-16 h-16 my-1 flex items-center justify-center brightness-0 invert">
-                <img 
-                  src="/art.png" 
-                  alt="Mulai Desain" 
-                  className="w-full h-full object-contain filter drop-shadow group-hover:rotate-6 transition duration-300" 
-                />
+                <img src="/art.png" alt="Mulai Desain" className="w-full h-full object-contain filter drop-shadow group-hover:rotate-6 transition duration-300" />
               </div>
-
               <h3 className="font-black text-white text-[11px] uppercase tracking-widest mt-1">Custom Studio</h3>
-
               <div className="w-full mt-3 bg-white text-black hover:bg-zinc-200 font-black text-[11px] py-2.5 px-4 rounded-xl uppercase tracking-widest text-center shadow transition duration-300">
                 Mulai Desain ➔
               </div>

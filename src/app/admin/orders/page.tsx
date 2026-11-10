@@ -10,7 +10,7 @@ type Order = {
   customer_name: string
   phone: string
   address: string
-  items: any // Bisa berupa string atau array JSON dari keranjang
+  items: any
   total_price: string | null
   status: string
   created_at: string
@@ -23,13 +23,15 @@ type Product = {
   price: string
   original_price: string | null
   image: string | null
+  status?: string // 'active' atau 'archived'
 }
 
-type HeroSlide = {
+type HeroBannerSlide = {
   id: number
   tag: string
   title: string
   subtitle: string
+  image_url: string
 }
 
 export default function AdminDashboardPage() {
@@ -47,8 +49,9 @@ export default function AdminDashboardPage() {
   const [replyMsg, setReplyMsg] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // State Produk Katalog & Kategori Dinamis
+  // State Produk Katalog, Pencarian, Folder Kategori & Arsip
   const [products, setProducts] = useState<Product[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
@@ -66,11 +69,13 @@ export default function AdminDashboardPage() {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
 
-  // State CMS Hero Slides & Toggle Tampil Teks Banner
-  const [heroSlides, setHeroSlides] = useState<HeroSlide[]>([])
+  // State CMS Multi-Slide Banner & Toggle Teks
+  const [bannerSlides, setBannerSlides] = useState<HeroBannerSlide[]>([])
   const [slideTag, setSlideTag] = useState('')
   const [slideTitle, setSlideTitle] = useState('')
   const [slideSubtitle, setSlideSubtitle] = useState('')
+  const [slideImageFile, setSlideImageFile] = useState<File | null>(null)
+  const [uploadingSlide, setUploadingSlide] = useState(false)
   const [showBannerText, setShowBannerText] = useState(true)
 
   useEffect(() => {
@@ -82,10 +87,10 @@ export default function AdminDashboardPage() {
       }
       setAuthed(true)
 
-      const [ordersRes, productsRes, slidesRes, settingsRes, chatsRes] = await Promise.all([
+      const [ordersRes, productsRes, bannersRes, settingsRes, chatsRes] = await Promise.all([
         supabase.from('orders').select('*').order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('created_at', { ascending: false }),
-        supabase.from('hero_slides').select('*'),
+        supabase.from('hero_banners').select('*').order('created_at', { ascending: true }),
         supabase.from('site_settings').select('data').eq('id', 1).maybeSingle(),
         supabase.from('chats').select('room_id').order('created_at', { ascending: false })
       ])
@@ -96,7 +101,7 @@ export default function AdminDashboardPage() {
         const uniqueCats = Array.from(new Set(productsRes.data.map((p: any) => p.category).filter(Boolean))) as string[]
         setCategories((prev) => Array.from(new Set([...prev, ...uniqueCats])))
       }
-      if (slidesRes.data) setHeroSlides(slidesRes.data as HeroSlide[])
+      if (bannersRes.data) setBannerSlides(bannersRes.data as HeroBannerSlide[])
       if (settingsRes.data?.data) {
         const settingsData = settingsRes.data.data as any
         if (typeof settingsData.showBannerText === 'boolean') {
@@ -215,11 +220,8 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // FUNGSI EKSTRAKSI URL DESAIN YANG DISEMPURNAKAN (MENDUKUNG JSON ARRAY & TEKS BIASA)
   const extractOrderItemsAndFiles = (itemsData: any) => {
     let parsedItems = []
-    
-    // Jika items disimpan sebagai array JSON dari checkout
     if (Array.isArray(itemsData)) {
       parsedItems = itemsData
     } else if (typeof itemsData === 'string') {
@@ -241,7 +243,6 @@ export default function AdminDashboardPage() {
       }))
     }
 
-    // Fallback jika berupa teks string lama
     const textStr = String(itemsData || '')
     const getUrl = (keyword: string) => {
       const regexBracket = new RegExp(`\\[(?:[^:]*?)${keyword}:\\s*(https?://[^\\]]+)\\]`, 'i')
@@ -349,7 +350,8 @@ export default function AdminDashboardPage() {
             price: newPrice,
             original_price: newOriginalPrice || null,
             category: finalCategory,
-            image: imageUrl
+            image: imageUrl,
+            status: 'active'
           })
           .select()
           .single()
@@ -372,6 +374,25 @@ export default function AdminDashboardPage() {
     } finally {
       setUploadingImage(false)
     }
+  }
+
+  // Handler Toggle Archive / Unarchive Produk
+  const handleToggleArchiveProduct = async (prod: Product) => {
+    const nextStatus = prod.status === 'archived' ? 'active' : 'archived'
+    const actionText = nextStatus === 'archived' ? 'mengarsipkan (menyembunyikan)' : 'mengaktifkan kembali'
+    if (!confirm(`Yakin ingin ${actionText} produk "${prod.title}"?`)) return
+
+    const { error } = await supabase
+      .from('products')
+      .update({ status: nextStatus })
+      .eq('id', prod.id)
+
+    if (error) {
+      alert('Gagal mengubah status arsip produk.')
+      return
+    }
+
+    setProducts(products.map(p => p.id === prod.id ? { ...p, status: nextStatus } : p))
   }
 
   const handleStartEdit = (p: Product) => {
@@ -408,48 +429,76 @@ export default function AdminDashboardPage() {
     setProducts(products.filter((p) => p.id !== id))
   }
 
-  const handleAddHeroSlide = async (e: React.FormEvent) => {
+  // Handler Tambah Slide Banner Multi-Gambar
+  const handleAddBannerSlide = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!slideTitle.trim()) {
-      alert('Judul slider tidak boleh kosong!')
+    if (!slideImageFile || !slideTitle.trim()) {
+      alert('Pilih file gambar banner dan isi judul terlebih dahulu!')
       return
     }
 
-    const { data, error } = await supabase
-      .from('hero_slides')
-      .insert([{ tag: slideTag, title: slideTitle, subtitle: slideSubtitle }])
-      .select()
-      .single()
+    try {
+      setUploadingSlide(true)
+      const fileExt = slideImageFile.name.split('.').pop()
+      const fileName = `hero-banner-${Date.now()}.${fileExt}`
+      const { error: uploadErr } = await supabase.storage.from('designs').upload(fileName, slideImageFile)
+      if (uploadErr) throw uploadErr
 
-    if (error || !data) {
-      alert('Gagal menambahkan slider hero.')
-      return
+      const { data: pub } = supabase.storage.from('designs').getPublicUrl(fileName)
+      const imageUrl = pub.publicUrl
+
+      const { data, error } = await supabase
+        .from('hero_banners')
+        .insert([{ tag: slideTag, title: slideTitle, subtitle: slideSubtitle, image_url: imageUrl }])
+        .select()
+        .single()
+
+      if (error || !data) throw error
+
+      setBannerSlides([...bannerSlides, data as HeroBannerSlide])
+      setSlideTag('')
+      setSlideTitle('')
+      setSlideSubtitle('')
+      setSlideImageFile(null)
+      alert('Slide banner baru berhasil ditambahkan!')
+    } catch (err: any) {
+      alert(err.message || 'Gagal mengunggah slide banner.')
+    } finally {
+      setUploadingSlide(false)
     }
-
-    setHeroSlides([...heroSlides, data as HeroSlide])
-    setSlideTag('')
-    setSlideTitle('')
-    setSlideSubtitle('')
-    alert('Slider hero berhasil ditambahkan!')
   }
 
-  const handleDeleteHeroSlide = async (id: number) => {
-    if (!confirm('Hapus slider ini?')) return
-    const { error } = await supabase.from('hero_slides').delete().eq('id', id)
+  // Handler Hapus Slide Banner
+  const handleDeleteBannerSlide = async (id: number) => {
+    if (!confirm('Hapus slide banner ini?')) return
+    const { error } = await supabase.from('hero_banners').delete().eq('id', id)
     if (error) {
-      alert('Gagal menghapus slider.')
+      alert('Gagal menghapus slide banner.')
       return
     }
-    setHeroSlides(heroSlides.filter((s) => s.id !== id))
+    setBannerSlides(bannerSlides.filter((s) => s.id !== id))
   }
 
   const handleToggleBannerText = async (newState: boolean) => {
     setShowBannerText(newState)
-    await supabase.from('site_settings').upsert({
-      id: 1,
-      data: { showBannerText: newState }
-    })
+    const { data: current } = await supabase.from('site_settings').select('data').eq('id', 1).maybeSingle()
+    const updatedData = { ...(current?.data || {}), showBannerText: newState }
+    await supabase.from('site_settings').upsert({ id: 1, data: updatedData })
   }
+
+  // Filter produk berdasarkan kolom Search
+  const filteredProducts = products.filter(p => 
+    p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.category.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  // Kelompokkan produk per kategori (folder)
+  const groupedProducts: { [key: string]: Product[] } = {}
+  filteredProducts.forEach(p => {
+    const cat = p.category || 'Lainnya'
+    if (!groupedProducts[cat]) groupedProducts[cat] = []
+    groupedProducts[cat].push(p)
+  })
 
   if (!authed) {
     return (
@@ -493,7 +542,7 @@ export default function AdminDashboardPage() {
             🛍️ Upload & Kelola Katalog ({products.length})
           </button>
           <button onClick={() => setActiveTab('settings')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'settings' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'}`}>
-            ⚙️ CMS Banner Slider Hero ({heroSlides.length})
+            ⚙️ CMS Multi-Slide Banner ({bannerSlides.length})
           </button>
         </div>
 
@@ -622,11 +671,9 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: PRODUK (TAMBAH, EDIT, HAPUS KATEGORI) */}
+        {/* TAB 2: PRODUK (DENGAN FOLDER KATEGORI, SEARCH, & ARCHIVE) */}
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-            
-            {/* Form Tambah / Edit Produk */}
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
               <div className="flex justify-between items-center border-b pb-2">
                 <h2 className="text-sm font-black uppercase tracking-wider text-red-600">
@@ -651,10 +698,9 @@ export default function AdminDashboardPage() {
                   <input type="text" placeholder="Contoh: Rp 150.000" value={newOriginalPrice} onChange={(e) => setNewOriginalPrice(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" />
                 </div>
 
-                {/* Pilihan Kategori, Tambah, & Hapus Kategori Kustom */}
                 <div>
                   <div className="flex justify-between items-center mb-1">
-                    <label className="font-bold">Kategori Produk</label>
+                    <label className="font-bold">Kategori / Folder Produk</label>
                     {!defaultCategories.includes(newCategory) && !isAddingCustomCategory && (
                       <button
                         type="button"
@@ -688,7 +734,7 @@ export default function AdminDashboardPage() {
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          placeholder="Nama Kategori Baru (Cth: Christmas Series)"
+                          placeholder="Nama Kategori Baru"
                           value={customCategoryInput}
                           onChange={(e) => setCustomCategoryInput(e.target.value)}
                           className="flex-1 bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none"
@@ -701,7 +747,6 @@ export default function AdminDashboardPage() {
                           Batal
                         </button>
                       </div>
-                      <span className="text-[10px] text-zinc-400 block">Kategori baru ini akan langsung tersimpan & tampil di pilihan publik.</span>
                     </div>
                   )}
                 </div>
@@ -722,40 +767,82 @@ export default function AdminDashboardPage() {
               </form>
             </div>
 
-            {/* Daftar Katalog Aktif dengan Tombol Edit */}
-            <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-              <h2 className="text-sm font-black uppercase tracking-wider text-black border-b pb-2">Daftar Katalog Aktif ({products.length})</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
-                {products.map((p) => (
-                  <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border flex items-center justify-between gap-3">
-                    {p.image && <img src={p.image} alt="" className="w-14 h-14 object-cover rounded-xl bg-white shadow-sm flex-shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-red-600 font-black">{p.price}</span>
-                        {p.original_price && <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>}
-                      </div>
-                      <span className="text-[10px] bg-black text-white px-2 py-0.5 rounded-full">{p.category}</span>
-                    </div>
-                    <div className="flex flex-col gap-1.5 flex-shrink-0">
-                      <button onClick={() => handleStartEdit(p)} className="bg-zinc-200 hover:bg-zinc-300 text-black font-bold px-3 py-1 rounded-lg text-[10px] transition cursor-pointer">Edit</button>
-                      <button onClick={() => handleDeleteProduct(p.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1 rounded-lg text-[10px] transition cursor-pointer">Hapus</button>
-                    </div>
+            <div className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 gap-3">
+                <h2 className="text-sm font-black uppercase tracking-wider text-black">
+                  Daftar Katalog Produk ({filteredProducts.length} Total)
+                </h2>
+                {/* Kolom Search Produk */}
+                <div className="w-full sm:w-64">
+                  <input
+                    type="text"
+                    placeholder="🔍 Cari nama produk..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-gray-50 border rounded-xl px-3.5 py-2 text-xs font-bold text-black focus:outline-none focus:border-black transition"
+                  />
+                </div>
+              </div>
+
+              {/* TAMPILAN PER FOLDER KATEGORI */}
+              <div className="space-y-6 max-h-[600px] overflow-y-auto pr-1">
+                {Object.keys(groupedProducts).length === 0 ? (
+                  <div className="text-center py-12 text-gray-400 text-xs italic">
+                    Tidak ada produk yang cocok dengan pencarian "{searchQuery}".
                   </div>
-                ))}
+                ) : (
+                  Object.entries(groupedProducts).map(([categoryName, items]) => (
+                    <div key={categoryName} className="space-y-3 bg-zinc-50/60 p-4 rounded-2xl border border-zinc-200">
+                      <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
+                        <h3 className="font-black text-xs uppercase tracking-wider text-zinc-900 flex items-center gap-2">
+                          📁 Folder: {categoryName} <span className="text-[10px] bg-black text-white px-2 py-0.5 rounded-full">({items.length})</span>
+                        </h3>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {items.map((p) => {
+                          const isArchived = p.status === 'archived'
+                          return (
+                            <div key={p.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-3 bg-white shadow-sm transition ${isArchived ? 'opacity-50 border-dashed border-zinc-400' : 'border-zinc-200'}`}>
+                              {p.image && <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm flex-shrink-0" />}
+                              <div className="flex-1 min-w-0">
+                                <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-red-600 font-black">{p.price}</span>
+                                  {p.original_price && <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>}
+                                </div>
+                                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${isArchived ? 'bg-zinc-500 text-white' : 'bg-emerald-600 text-white'}`}>
+                                  {isArchived ? '📦 Diarsipkan (Disembunyikan)' : '✨ Aktif (Tampil)'}
+                                </span>
+                              </div>
+                              
+                              <div className="flex flex-col gap-1 flex-shrink-0">
+                                <button onClick={() => handleToggleArchiveProduct(p)} className={`font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer ${isArchived ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}>
+                                  {isArchived ? 'Aktifkan' : 'Arsip'}
+                                </button>
+                                <button onClick={() => handleStartEdit(p)} className="bg-zinc-100 hover:bg-zinc-200 text-black font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer">Edit</button>
+                                <button onClick={() => handleDeleteProduct(p.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer">Hapus</button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-
           </div>
         )}
 
-        {/* TAB 3: CMS BANNER HERO */}
+        {/* TAB 3: CMS MULTI-SLIDE BANNER */}
         {activeTab === 'settings' && (
           <div className="space-y-6">
+            
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-black">Status Tampilkan Teks Banner Hero</h3>
-                <p className="text-xs text-gray-400 mt-0.5">Aktifkan untuk menampilkan teks slide promo di halaman utama. Nonaktifkan untuk menyembunyikan / mengosongkan teks banner.</p>
+                <p className="text-xs text-gray-400 mt-0.5">Aktifkan untuk menampilkan teks slide promo di halaman utama.</p>
               </div>
               <button
                 onClick={() => handleToggleBannerText(!showBannerText)}
@@ -770,9 +857,10 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+              
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-                <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">+ Tambah Slide Banner Hero Baru</h2>
-                <form onSubmit={handleAddHeroSlide} className="space-y-3 text-xs">
+                <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">+ Tambah Slide Banner Gambar & Teks Baru</h2>
+                <form onSubmit={handleAddBannerSlide} className="space-y-3 text-xs">
                   <div>
                     <label className="block font-bold mb-1">Tag Banner (Kecil di Atas)</label>
                     <input type="text" placeholder="Contoh: WORKSHOP HIGHLIGHT" value={slideTag} onChange={(e) => setSlideTag(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
@@ -783,29 +871,47 @@ export default function AdminDashboardPage() {
                   </div>
                   <div>
                     <label className="block font-bold mb-1">Sub-Judul / Keterangan *</label>
-                    <textarea rows={3} placeholder="Kualitas sablon tajam, detail warna akurat..." value={slideSubtitle} onChange={(e) => setSlideSubtitle(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required></textarea>
+                    <textarea rows={2} placeholder="Kualitas sablon tajam..." value={slideSubtitle} onChange={(e) => setSlideSubtitle(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
                   </div>
-                  <button type="submit" className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer">
-                    SIMPAN SLIDER BARU
+                  <div>
+                    <label className="block font-bold mb-1">Upload Gambar Banner (PNG/JPG) *</label>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      onChange={(e) => setSlideImageFile(e.target.files?.[0] || null)} 
+                      className="text-xs text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-black file:text-white cursor-pointer" 
+                      required 
+                    />
+                  </div>
+                  <button type="submit" disabled={uploadingSlide} className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer">
+                    {uploadingSlide ? 'Mengunggah...' : 'SIMPAN SLIDE BANNER BARU'}
                   </button>
                 </form>
               </div>
 
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-                <h2 className="text-sm font-black uppercase tracking-wider text-black border-b pb-2">Daftar Slider Hero Aktif ({heroSlides.length})</h2>
+                <h2 className="text-sm font-black uppercase tracking-wider text-black border-b pb-2">Daftar Slide Banner Aktif ({bannerSlides.length})</h2>
                 <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1">
-                  {heroSlides.length === 0 ? <p className="text-xs text-gray-400 italic">Belum ada slide banner.</p> : heroSlides.map((slide) => (
-                    <div key={slide.id} className="bg-gray-50 p-4 rounded-2xl border flex items-center justify-between gap-3">
-                      <div className="space-y-1 flex-1 min-w-0">
-                        <span className="text-[9px] bg-black text-white px-2 py-0.5 rounded-full font-bold uppercase">{slide.tag}</span>
-                        <h4 className="font-black text-xs text-black uppercase">{slide.title}</h4>
-                        <p className="text-[11px] text-gray-500 line-clamp-1">{slide.subtitle}</p>
+                  {bannerSlides.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic">Belum ada slide banner.</p>
+                  ) : (
+                    bannerSlides.map((slide) => (
+                      <div key={slide.id} className="bg-gray-50 p-3 rounded-2xl border flex items-center justify-between gap-3">
+                        {slide.image_url && (
+                          <img src={slide.image_url} alt="" className="w-16 h-14 object-cover rounded-xl border bg-white flex-shrink-0" />
+                        )}
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <span className="text-[9px] bg-black text-white px-2 py-0.5 rounded-full font-bold uppercase">{slide.tag}</span>
+                          <h4 className="font-black text-xs text-black uppercase truncate">{slide.title}</h4>
+                          <p className="text-[10px] text-gray-500 line-clamp-1">{slide.subtitle}</p>
+                        </div>
+                        <button onClick={() => handleDeleteBannerSlide(slide.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer flex-shrink-0">Hapus</button>
                       </div>
-                      <button onClick={() => handleDeleteHeroSlide(slide.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer">Hapus</button>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
+
             </div>
           </div>
         )}

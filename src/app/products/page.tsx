@@ -12,6 +12,7 @@ type Product = {
   price: string
   originalPrice: string | null
   image: string | null
+  status?: string
 }
 
 type Review = {
@@ -39,6 +40,7 @@ function ProductsContent() {
 
   useEffect(() => {
     const loadProducts = async () => {
+      // Ambil produk, utamakan yang berstatus aktif (tidak di-OFF-kan/di-arsip)
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -48,14 +50,18 @@ function ProductsContent() {
         console.error('Gagal memuat produk', error.message)
         setProducts([])
       } else {
+        // Filter di sisi client: hanya tampilkan produk yang statusnya 'active' atau belum diset statusnya
+        const activeProducts = (data || []).filter((p: any) => p.status !== 'archived')
+
         setProducts(
-          (data || []).map((p: any) => ({
+          activeProducts.map((p: any) => ({
             id: p.id,
             title: p.title,
             category: p.category,
             price: p.price,
             originalPrice: p.original_price,
-            image: p.image
+            image: p.image,
+            status: p.status
           }))
         )
       }
