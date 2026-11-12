@@ -11,6 +11,16 @@ export default function Home() {
   const [allProducts, setAllProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
+  // State untuk Minimize / Maximize Folder Kategori (Default: Terbuka / false)
+  const [minimizedFolders, setMinimizedFolders] = useState<{ [key: string]: boolean }>({})
+
+  const toggleFolder = (folderName: string) => {
+    setMinimizedFolders(prev => ({
+      ...prev,
+      [folderName]: !prev[folderName]
+    }))
+  }
+
   // State untuk Multi-Slide Banner Gambar + Teks dari Supabase
   const [bannerSlides, setBannerSlides] = useState<any[]>([
     {
@@ -42,21 +52,22 @@ export default function Home() {
         }
       }
 
-      // 2. Ambil Produk Pilihan Terbaru
+      // 2. Ambil Produk Pilihan Terbaru (Kecuali yang berstatus 'archived')
       const { data: latestData } = await supabase
         .from('products')
         .select('*')
+        .neq('status', 'archived')
         .order('created_at', { ascending: false })
-        .limit(8)
+        .limit(10)
 
       if (latestData) setLatestProducts(latestData)
 
-      // 3. Ambil Katalog Keseluruhan
+      // 3. Ambil SEMUA Katalog Produk Aktif (Kecuali yang berstatus 'archived')
       const { data: allData } = await supabase
         .from('products')
         .select('*')
+        .neq('status', 'archived')
         .order('title', { ascending: true })
-        .limit(8)
 
       if (allData) setAllProducts(allData)
 
@@ -128,15 +139,7 @@ export default function Home() {
       cat === 'hoodie' ||
       cat === 'topi'
 
-    let apparelType = 'kaos'
-    if (cat.includes('hoodie')) apparelType = 'hoodie'
-    else if (cat.includes('topi')) apparelType = 'topi'
-    else if (cat.includes('tas')) apparelType = 'tas'
-    else if (cat.includes('oversize')) apparelType = 'oversized'
-
-    const targetUrl = isCustom3D 
-      ? `/custom?type=${apparelType}&id=${prod.id}` 
-      : `/products/${prod.id}`
+    const targetUrl = `/products/${prod.id}`
 
     return (
       <div
@@ -154,6 +157,20 @@ export default function Home() {
         </div>
 
         <div className="pt-2 px-1 space-y-1">
+          {/* PAMFLET WARNA DI CARD LOBBY */}
+          {prod.colors && Array.isArray(prod.colors) && prod.colors.length > 0 && (
+            <div className="flex items-center gap-1 py-0.5">
+              {prod.colors.map((hex: string, i: number) => (
+                <span
+                  key={i}
+                  className="w-2.5 h-2.5 rounded-full border border-zinc-300 shadow-xs"
+                  style={{ backgroundColor: hex }}
+                  title={hex}
+                />
+              ))}
+            </div>
+          )}
+
           <h4 className="font-bold text-[11px] text-zinc-900 line-clamp-1">{prod.title}</h4>
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-zinc-950">{prod.price}</span>
@@ -172,6 +189,14 @@ export default function Home() {
     )
   }
 
+  // Mengelompokkan semua produk berdasarkan kategori/folder
+  const groupedProducts = allProducts.reduce((acc: any, prod: any) => {
+    const cat = prod.category || 'Lainnya'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(prod)
+    return acc
+  }, {})
+
   const activeSlide = bannerSlides[currentSlide] || bannerSlides[0]
 
   return (
@@ -180,7 +205,6 @@ export default function Home() {
       {/* HERO SECTION: MULTI-SLIDE BANNER DINAMIS */}
       <section className="bg-zinc-950 text-white py-12 px-6 md:px-12 relative overflow-hidden min-h-[340px] flex items-center">
         
-        {/* Background Gambar Slide Aktif */}
         {activeSlide?.image_url && (
           <div className="absolute inset-0 z-0 transition-opacity duration-1000">
             <img src={activeSlide.image_url} alt="Banner" className="w-full h-full object-cover opacity-50" />
@@ -190,7 +214,6 @@ export default function Home() {
 
         <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
           
-          {/* SISI KIRI: TEKS SLIDE */}
           {showBannerText && bannerSlides.length > 0 ? (
             <div className="flex-1 space-y-4 text-left z-10">
               <span className="bg-white/10 border border-white/20 text-zinc-300 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
@@ -218,7 +241,6 @@ export default function Home() {
             <div className="hidden md:block flex-1" />
           )}
 
-          {/* SISI KANAN: KOTAK "MULAI DESAIN" */}
           <div className="w-full md:w-auto flex justify-end z-10">
             <Link
               href="/custom"
@@ -295,25 +317,53 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 4. PRODUK PILIHAN KESELURUHAN */}
-      <section className="max-w-7xl mx-auto px-4 md:px-12 pt-10 space-y-4">
+      {/* 4. FOLDER KATEGORI BERDASARKAN FOLDER (MINIMIZE & MAXIMIZE) & SEMUA PRODUK MUNCUL */}
+      <section className="max-w-7xl mx-auto px-4 md:px-12 pt-10 space-y-6">
         <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
           <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
-            Produk Pilihan Keseluruhan
+            Katalog Berdasarkan Folder & Produk Keseluruhan
           </h2>
-          <Link href="/products" className="text-[11px] font-bold text-zinc-400 hover:text-black transition">
-            Lihat Semua ➔
-          </Link>
+          <span className="text-[10px] font-bold text-zinc-400 uppercase">Total: {allProducts.length} Produk</span>
         </div>
 
         {loading ? (
-          <div className="py-10 text-center text-xs font-bold text-zinc-400">Memuat produk...</div>
-        ) : allProducts.length === 0 ? (
-          <div className="py-10 text-center text-xs text-zinc-400">Belum ada produk.</div>
+          <div className="py-12 text-center text-xs font-bold text-zinc-400">Memuat katalog lengkap...</div>
+        ) : Object.keys(groupedProducts).length === 0 ? (
+          <div className="py-12 text-center text-xs text-zinc-400">Belum ada produk tersimpan.</div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {allProducts.map(renderProductCard)}
-          </div>
+          Object.keys(groupedProducts).map((categoryName) => {
+            const isMinimized = minimizedFolders[categoryName] || false
+            const productsInFolder = groupedProducts[categoryName]
+
+            return (
+              <div key={categoryName} className="bg-zinc-50 border border-zinc-200 rounded-3xl p-5 md:p-6 space-y-4 shadow-sm">
+                
+                <div 
+                  onClick={() => toggleFolder(categoryName)}
+                  className="flex justify-between items-center cursor-pointer select-none"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-black"></span>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">
+                      FOLDER: {categoryName} <span className="text-xs text-zinc-500 font-normal">({productsInFolder.length} Produk)</span>
+                    </h3>
+                  </div>
+                  <button 
+                    type="button"
+                    className="text-xs font-bold bg-white border border-zinc-300 hover:border-black px-3 py-1.5 rounded-xl uppercase transition shadow-sm cursor-pointer"
+                  >
+                    {isMinimized ? 'Maximize [+]' : 'Minimize [-]'}
+                  </button>
+                </div>
+
+                {!isMinimized && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 pt-2">
+                    {productsInFolder.map(renderProductCard)}
+                  </div>
+                )}
+              </div>
+            )
+          })
         )}
       </section>
 

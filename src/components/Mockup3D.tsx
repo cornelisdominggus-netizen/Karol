@@ -152,7 +152,6 @@ function DesignLayer({ model, side, apparelType, imageUrl, scale, positionX, pos
     let cancelled = false
     let loadedTexture: THREE.Texture | null = null
 
-    // Memuat gambar via HTML Image Element supaya format Base64 / Blob URL terbaca 100%
     const imgElement = new window.Image()
     imgElement.crossOrigin = 'anonymous'
     imgElement.src = imageUrl
@@ -503,7 +502,11 @@ function SceneCapture({ onReady }: { onReady: React.MutableRefObject<(() => void
   useEffect(() => {
     onReady.current = () => {
       try {
+        // Pastikan latar belakang webgl dibersihkan dengan alpha transparan (0)
+        gl.setClearColor(0x000000, 0)
+        gl.clear()
         gl.render(scene, camera)
+        
         const dataUrl = gl.domElement.toDataURL('image/png')
         const link = document.createElement('a')
         link.href = dataUrl
@@ -569,7 +572,10 @@ export default function Mockup3D({
         <ModelErrorBoundary key={apparelType} label={apparelType}>
           <Canvas 
             camera={{ position: [0, 0, 4], fov: 45 }}
-            gl={{ preserveDrawingBuffer: true, alpha: true }}
+            gl={{ preserveDrawingBuffer: true, alpha: true, antialias: true }}
+            onCreated={({ gl }) => {
+              gl.setClearColor(0x000000, 0) // Menyetel clear color canvas WebGL murni transparan (alpha: 0)
+            }}
           >
             <ambientLight intensity={1.5} />
             <directionalLight position={[5, 5, 5]} intensity={2} />

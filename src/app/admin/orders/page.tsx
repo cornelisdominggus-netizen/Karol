@@ -23,7 +23,11 @@ type Product = {
   price: string
   original_price: string | null
   image: string | null
-  status?: string // 'active' atau 'archived'
+  image_secondary: string | null
+  description: string | null
+  sizes_price: any | null
+  colors: string[] | null
+  status?: string
 }
 
 type HeroBannerSlide = {
@@ -39,37 +43,48 @@ export default function AdminDashboardPage() {
   const [authed, setAuthed] = useState(false)
   const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'settings' | 'chats'>('orders')
 
-  // State Pesanan
   const [orders, setOrders] = useState<Order[]>([])
-
-  // State Chat
   const [chatRooms, setChatRooms] = useState<string[]>([])
   const [activeRoom, setActiveRoom] = useState<string>('')
   const [messages, setMessages] = useState<any[]>([])
   const [replyMsg, setReplyMsg] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // State Produk Katalog, Pencarian, Folder Kategori & Arsip
+  // State untuk Filter Laporan Bulanan / Tahunan & Bagi Hasil (Aman dari SSR error)
+  const [reportMonth, setReportMonth] = useState('all')
+  const [reportYear, setReportYear] = useState('2026')
+  const [profitSharePercentage, setProfitSharePercentage] = useState<number>(50)
+
+  // Set tahun otomatis sesuai device client saat pertama kali render
+  useEffect(() => {
+    setReportYear(String(new Date().getFullYear()))
+  }, [])
+
   const [products, setProducts] = useState<Product[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newPrice, setNewPrice] = useState('')
   const [newOriginalPrice, setNewOriginalPrice] = useState('')
-  
-  const defaultCategories = ['Custom Kaos', 'Custom Oversized', 'Custom Hoodie', 'Custom Topi', 'Polosan']
-  const [categories, setCategories] = useState<string[]>([
-    ...defaultCategories,
-    'Christmas Series'
-  ])
+  const [newDescription, setNewDescription] = useState('')
+
+  const [sizePrices, setSizePrices] = useState<{ [key: string]: string }>({
+    'S': '', 'M': '', 'L': '', 'XL': '', '2XL': '', '3XL': ''
+  })
+
+  const [colorInput, setColorInput] = useState('#000000')
+  const [productColors, setProductColors] = useState<string[]>(['#111111', '#FFFFFF', '#71717a'])
+
+  const defaultCategories = ['Custom Kaos', 'Custom Oversized', 'Custom Hoodie', 'Custom Topi', 'Polosan', 'Tas', 'Merchandise', 'Christmas Series']
+  const [categories, setCategories] = useState<string[]>([...defaultCategories])
   const [newCategory, setNewCategory] = useState('Custom Kaos')
   const [customCategoryInput, setCustomCategoryInput] = useState('')
   const [isAddingCustomCategory, setIsAddingCustomCategory] = useState(false)
 
-  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imageFile1, setImageFile1] = useState<File | null>(null)
+  const [imageFile2, setImageFile2] = useState<File | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
 
-  // State CMS Multi-Slide Banner & Toggle Teks
   const [bannerSlides, setBannerSlides] = useState<HeroBannerSlide[]>([])
   const [slideTag, setSlideTag] = useState('')
   const [slideTitle, setSlideTitle] = useState('')
@@ -138,27 +153,8 @@ export default function AdminDashboardPage() {
       )
       .subscribe()
 
-    const chatsChannel = supabase
-      .channel('admin-chats-realtime')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chats' },
-        (payload: any) => {
-          const newRoom = payload.new.room_id
-          setChatRooms((prev) => {
-            if (!prev.includes(newRoom)) return [newRoom, ...prev]
-            return prev
-          })
-          if (activeRoom === newRoom) {
-            setMessages((prev) => [...prev, payload.new])
-          }
-        }
-      )
-      .subscribe()
-
     return () => {
       supabase.removeChannel(ordersChannel)
-      supabase.removeChannel(chatsChannel)
     }
   }, [router, activeRoom])
 
@@ -174,10 +170,6 @@ export default function AdminDashboardPage() {
     }
     fetchMessages()
   }, [activeRoom])
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -237,6 +229,7 @@ export default function AdminDashboardPage() {
       return parsedItems.map((item: any) => ({
         title: item.title || 'Custom Apparel',
         size: item.size || 'L',
+        color: item.color || '',
         quantity: item.quantity || 1,
         frontDesign: item.frontDesignImage || item.front_design_image || '',
         backDesign: item.backDesignImage || item.back_design_image || '',
@@ -256,10 +249,51 @@ export default function AdminDashboardPage() {
     return [{
       title: textStr.split('||')[0] || 'Pesanan Produk',
       size: '-',
+      color: '',
       quantity: 1,
       frontDesign: getUrl('Desain Depan'),
       backDesign: getUrl('Desain Belakang'),
     }]
+  }
+
+  // Logika Filter Laporan Berdasarkan Bulan & Tahun
+  const filteredOrdersForReport = orders.filter((ord) => {
+    const orderDate = new Date(ord.created_at)
+    const ordYear = String(orderDate.getFullYear())
+    const ordMonth = String(orderDate.getMonth() + 1).padStart(2, '0')
+
+    if (reportYear && ordYear !== reportYear) return false
+    if (reportMonth !== 'all' && ordMonth !== reportMonth) return false
+
+    return true
+  })
+
+  const totalOmzetNumber = filteredOrdersForReport.reduce((acc, ord) => {
+    const cleanPrice = Number(String(ord.total_price || '0').replace(/[^0-9]/g, ''))
+    return acc + cleanPrice
+  }, 0)
+
+  const formatRupiah = (num: number) => {
+    return 'Rp ' + num.toLocaleString('id-ID')
+  }
+
+  const handleExportCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8," 
+      + "ID Pesanan,Tanggal,Nama Pelanggan,No Telepon,Total Harga,Status\n"
+
+    filteredOrdersForReport.forEach((ord) => {
+      const dateStr = new Date(ord.created_at).toLocaleString('id-ID')
+      const row = `"#${ord.id}","${dateStr}","${ord.customer_name}","${ord.phone}","${ord.total_price}","${ord.status}"`
+      csvContent += row + "\r\n"
+    })
+
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `laporan_omzet_${reportMonth}_${reportYear}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   const handleDownloadFile = async (url: string, filename: string) => {
@@ -294,6 +328,16 @@ export default function AdminDashboardPage() {
     }
   }
 
+  const handleAddColor = () => {
+    if (!productColors.includes(colorInput)) {
+      setProductColors([...productColors, colorInput])
+    }
+  }
+
+  const handleRemoveColor = (col: string) => {
+    setProductColors(productColors.filter(c => c !== col))
+  }
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTitle || !newPrice) return
@@ -309,29 +353,47 @@ export default function AdminDashboardPage() {
     }
 
     try {
-      let imageUrl = editingId !== null ? products.find(p => p.id === editingId)?.image || '' : ''
+      const existingProduct = editingId !== null ? products.find(p => p.id === editingId) : null
+      let imageUrl1 = existingProduct?.image || ''
+      let imageUrl2 = existingProduct?.image_secondary || ''
 
-      if (imageFile) {
-        const fileExt = imageFile.name.split('.').pop()
-        const fileName = `${Date.now()}_prod.${fileExt}`
-        const { error: uploadError } = await supabase.storage.from('designs').upload(fileName, imageFile)
+      if (imageFile1) {
+        const fileExt = imageFile1.name.split('.').pop()
+        const fileName = `${Date.now()}_prod1.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('designs').upload(fileName, imageFile1)
         if (uploadError) throw uploadError
         const { data: pubData } = supabase.storage.from('designs').getPublicUrl(fileName)
-        imageUrl = pubData.publicUrl
-      } else if (!imageUrl) {
-        imageUrl = 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=500'
+        imageUrl1 = pubData.publicUrl
+      } else if (!imageUrl1) {
+        imageUrl1 = 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&q=80&w=500'
+      }
+
+      if (imageFile2) {
+        const fileExt = imageFile2.name.split('.').pop()
+        const fileName = `${Date.now()}_prod2.${fileExt}`
+        const { error: uploadError2 } = await supabase.storage.from('designs').upload(fileName, imageFile2)
+        if (uploadError2) throw uploadError2
+        const { data: pubData2 } = supabase.storage.from('designs').getPublicUrl(fileName)
+        imageUrl2 = pubData2.publicUrl
+      }
+
+      const productPayload = {
+        title: newTitle,
+        price: newPrice,
+        original_price: newOriginalPrice || null,
+        category: finalCategory,
+        image: imageUrl1,
+        image_secondary: imageUrl2 || null,
+        description: newDescription || null,
+        sizes_price: sizePrices,
+        colors: productColors,
+        status: existingProduct?.status || 'active'
       }
 
       if (editingId !== null) {
         const { data, error } = await supabase
           .from('products')
-          .update({
-            title: newTitle,
-            price: newPrice,
-            original_price: newOriginalPrice || null,
-            category: finalCategory,
-            image: imageUrl
-          })
+          .update(productPayload)
           .eq('id', editingId)
           .select()
           .single()
@@ -345,14 +407,7 @@ export default function AdminDashboardPage() {
       } else {
         const { data, error } = await supabase
           .from('products')
-          .insert({
-            title: newTitle,
-            price: newPrice,
-            original_price: newOriginalPrice || null,
-            category: finalCategory,
-            image: imageUrl,
-            status: 'active'
-          })
+          .insert([productPayload])
           .select()
           .single()
 
@@ -365,7 +420,11 @@ export default function AdminDashboardPage() {
       setNewTitle('')
       setNewPrice('')
       setNewOriginalPrice('')
-      setImageFile(null)
+      setNewDescription('')
+      setImageFile1(null)
+      setImageFile2(null)
+      setSizePrices({ 'S': '', 'M': '', 'L': '', 'XL': '', '2XL': '', '3XL': '' })
+      setProductColors(['#111111', '#FFFFFF', '#71717a'])
       setEditingId(null)
       setIsAddingCustomCategory(false)
       setCustomCategoryInput('')
@@ -376,7 +435,6 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Handler Toggle Archive / Unarchive Produk
   const handleToggleArchiveProduct = async (prod: Product) => {
     const nextStatus = prod.status === 'archived' ? 'active' : 'archived'
     const actionText = nextStatus === 'archived' ? 'mengarsipkan (menyembunyikan)' : 'mengaktifkan kembali'
@@ -400,6 +458,20 @@ export default function AdminDashboardPage() {
     setNewTitle(p.title)
     setNewPrice(p.price)
     setNewOriginalPrice(p.original_price || '')
+    setNewDescription(p.description || '')
+    if (p.sizes_price && typeof p.sizes_price === 'object') {
+      setSizePrices({
+        'S': p.sizes_price.S || '',
+        'M': p.sizes_price.M || '',
+        'L': p.sizes_price.L || '',
+        'XL': p.sizes_price.XL || '',
+        '2XL': p.sizes_price['2XL'] || '',
+        '3XL': p.sizes_price['3XL'] || '',
+      })
+    }
+    if (p.colors && Array.isArray(p.colors)) {
+      setProductColors(p.colors)
+    }
     if (categories.includes(p.category)) {
       setNewCategory(p.category)
       setIsAddingCustomCategory(false)
@@ -415,7 +487,10 @@ export default function AdminDashboardPage() {
     setNewTitle('')
     setNewPrice('')
     setNewOriginalPrice('')
-    setImageFile(null)
+    setNewDescription('')
+    setImageFile1(null)
+    setImageFile2(null)
+    setSizePrices({ 'S': '', 'M': '', 'L': '', 'XL': '', '2XL': '', '3XL': '' })
     setIsAddingCustomCategory(false)
   }
 
@@ -429,7 +504,6 @@ export default function AdminDashboardPage() {
     setProducts(products.filter((p) => p.id !== id))
   }
 
-  // Handler Tambah Slide Banner Multi-Gambar
   const handleAddBannerSlide = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!slideImageFile || !slideTitle.trim()) {
@@ -468,7 +542,6 @@ export default function AdminDashboardPage() {
     }
   }
 
-  // Handler Hapus Slide Banner
   const handleDeleteBannerSlide = async (id: number) => {
     if (!confirm('Hapus slide banner ini?')) return
     const { error } = await supabase.from('hero_banners').delete().eq('id', id)
@@ -486,13 +559,11 @@ export default function AdminDashboardPage() {
     await supabase.from('site_settings').upsert({ id: 1, data: updatedData })
   }
 
-  // Filter produk berdasarkan kolom Search
   const filteredProducts = products.filter(p => 
     p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.category.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // Kelompokkan produk per kategori (folder)
   const groupedProducts: { [key: string]: Product[] } = {}
   filteredProducts.forEach(p => {
     const cat = p.category || 'Lainnya'
@@ -512,7 +583,6 @@ export default function AdminDashboardPage() {
     <main className="min-h-screen bg-gray-50 py-6 px-3 sm:px-6 md:px-8">
       <div className="max-w-7xl mx-auto space-y-6">
         
-        {/* Header Admin */}
         <div className="bg-black text-white p-5 sm:p-6 md:p-8 rounded-3xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow">
           <div>
             <span className="bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider">
@@ -530,7 +600,6 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* Tab Navigasi Admin */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none border-b border-gray-200">
           <button onClick={() => setActiveTab('orders')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'orders' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'}`}>
             📦 Manajemen Pesanan ({orders.length})
@@ -546,98 +615,216 @@ export default function AdminDashboardPage() {
           </button>
         </div>
 
-        {/* TAB 1: MANAJEMEN PESANAN */}
         {activeTab === 'orders' && (
-          <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
-            <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">Daftar Pesanan Masuk Pelanggan</h2>
-            {orders.length === 0 ? (
-              <div className="text-center py-16 space-y-2">
-                <span className="text-4xl">📭</span>
-                <p className="text-xs text-gray-500 font-semibold">Belum ada pesanan masuk.</p>
+          <div className="space-y-6">
+            {/* KOTAK LAPORAN BULANAN / TAHUNAN & BAGI HASIL (COMPACT VERSION) */}
+            <div className="bg-zinc-900 text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-3">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] bg-red-600 font-black px-2 py-0.5 rounded uppercase tracking-wider">
+                    📊 Laporan Omzet
+                  </span>
+                  <h3 className="text-xs font-black uppercase tracking-tight">Kalkulator Bagi Hasil</h3>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={reportMonth}
+                    onChange={(e) => setReportMonth(e.target.value)}
+                    className="bg-zinc-800 border border-zinc-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer focus:outline-none"
+                  >
+                    <option value="all">Semua Bulan</option>
+                    <option value="01">Januari</option>
+                    <option value="02">Februari</option>
+                    <option value="03">Maret</option>
+                    <option value="04">April</option>
+                    <option value="05">Mei</option>
+                    <option value="06">Juni</option>
+                    <option value="07">Juli</option>
+                    <option value="08">Agustus</option>
+                    <option value="09">September</option>
+                    <option value="10">Oktober</option>
+                    <option value="11">November</option>
+                    <option value="12">Desember</option>
+                  </select>
+
+                  <select
+                    value={reportYear}
+                    onChange={(e) => setReportYear(e.target.value)}
+                    className="bg-zinc-800 border border-zinc-700 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer focus:outline-none"
+                  >
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                    <option value="2027">2027</option>
+                  </select>
+
+                  <button
+                    onClick={handleExportCSV}
+                    className="bg-white hover:bg-zinc-200 text-black text-[11px] font-black px-3 py-1.5 rounded-lg transition uppercase tracking-wider cursor-pointer"
+                  >
+                    📥 Export Excel
+                  </button>
+                </div>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs min-w-[750px]">
-                  <thead>
-                    <tr className="border-b bg-gray-50 text-gray-500 uppercase">
-                      <th className="p-3">ID / Waktu</th>
-                      <th className="p-3">Pelanggan</th>
-                      <th className="p-3">Detail Item & Berkas Desain</th>
-                      <th className="p-3">Total Harga</th>
-                      <th className="p-3">Status</th>
-                      <th className="p-3 text-center">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {orders.map((ord) => {
-                      const extractedItems = extractOrderItemsAndFiles(ord.items)
-                      return (
-                        <tr key={ord.id} className="hover:bg-gray-50">
-                          <td className="p-3 font-mono text-gray-500 align-top">
-                            #{ord.id}
-                            <span className="block text-[10px] text-gray-400">{new Date(ord.created_at).toLocaleString('id-ID')}</span>
-                          </td>
-                          <td className="p-3 align-top">
-                            <p className="font-bold text-black uppercase">{ord.customer_name}</p>
-                            <p className="text-[11px] text-gray-500">{ord.phone}</p>
-                            <p className="text-[10px] text-gray-400 max-w-[180px]">{ord.address}</p>
-                          </td>
-                          <td className="p-3 align-top space-y-4 max-w-sm">
-                            {extractedItems.map((item, idx) => (
-                              <div key={idx} className="space-y-2 pb-2 border-b border-gray-100 last:border-0">
-                                <p className="font-semibold text-black">
-                                  {item.title} (Ukuran: {item.size}) x{item.quantity}
-                                </p>
-                                <div className="grid grid-cols-2 gap-2 max-w-[280px]">
-                                  <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
-                                    <span className="text-[9px] font-black text-gray-600 block">Desain Depan</span>
-                                    {item.frontDesign ? (
-                                      <>
-                                        <a href={item.frontDesign} target="_blank" rel="noreferrer">
-                                          <img src={item.frontDesign} alt="" className="w-full h-20 object-contain rounded bg-white border" />
-                                        </a>
-                                        <button onClick={() => handleDownloadFile(item.frontDesign, `depan-${ord.id}-${idx}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">📥 Download</button>
-                                      </>
-                                    ) : <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 flex justify-between md:flex-col md:justify-start">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase">Total Pesanan</span>
+                  <h4 className="text-sm md:text-base font-black">{filteredOrdersForReport.length} Transaksi</h4>
+                </div>
+
+                <div className="bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 flex justify-between md:flex-col md:justify-start">
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase">Total Omzet Kotor</span>
+                  <h4 className="text-sm md:text-base font-black text-emerald-400">{formatRupiah(totalOmzetNumber)}</h4>
+                </div>
+
+                <div className="bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Bagi Hasil (%)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={profitSharePercentage}
+                      onChange={(e) => setProfitSharePercentage(Number(e.target.value))}
+                      className="w-12 bg-zinc-900 border border-zinc-700 text-center text-[11px] font-bold rounded py-0.5 text-white"
+                    />
+                  </div>
+                  <div className="flex justify-between text-[11px] font-bold pt-1 border-t border-zinc-800">
+                    <span className="text-zinc-400">Anda: <span className="text-red-400">{formatRupiah((totalOmzetNumber * profitSharePercentage) / 100)}</span></span>
+                    <span className="text-zinc-400">Client: <span className="text-blue-400">{formatRupiah((totalOmzetNumber * (100 - profitSharePercentage)) / 100)}</span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* DAFTAR PESANAN MASUK */}
+            <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
+              <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">Daftar Pesanan Masuk Pelanggan</h2>
+              {orders.length === 0 ? (
+                <div className="text-center py-16 space-y-2">
+                  <span className="text-4xl">📭</span>
+                  <p className="text-xs text-gray-500 font-semibold">Belum ada pesanan masuk.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs min-w-[750px]">
+                    <thead>
+                      <tr className="border-b bg-gray-50 text-gray-500 uppercase">
+                        <th className="p-3">ID / Waktu</th>
+                        <th className="p-3">Pelanggan</th>
+                        <th className="p-3">Detail Item & Berkas Desain</th>
+                        <th className="p-3">Total Harga</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {orders.map((ord) => {
+                        const extractedItems = extractOrderItemsAndFiles(ord.items)
+                        return (
+                          <tr key={ord.id} className="hover:bg-gray-50">
+                            <td className="p-3 font-mono text-gray-500 align-top">
+                              #{ord.id}
+                              <span className="block text-[10px] text-gray-400">{new Date(ord.created_at).toLocaleString('id-ID')}</span>
+                            </td>
+                            <td className="p-3 align-top">
+                              <p className="font-bold text-black uppercase">{ord.customer_name}</p>
+                              <p className="text-[11px] text-gray-500">{ord.phone}</p>
+                              <p className="text-[10px] text-gray-400 max-w-[180px]">{ord.address}</p>
+                            </td>
+                            <td className="p-3 align-top space-y-4 max-w-sm">
+                              {extractedItems.map((item, idx) => (
+                                <div key={idx} className="space-y-2 pb-2 border-b border-gray-100 last:border-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-semibold text-black">
+                                      {item.title} (Ukuran: <span className="text-red-600 font-black">{item.size}</span>) x{item.quantity}
+                                    </p>
+                                    {item.color && (
+                                      <div className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded-md border text-[10px]">
+                                        <span 
+                                          className="w-3 h-3 rounded-full border border-zinc-400 shadow-inner inline-block" 
+                                          style={{ backgroundColor: item.color }} 
+                                        />
+                                        <span className="font-mono font-bold">{item.color}</span>
+                                      </div>
+                                    )}
                                   </div>
-                                  <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
-                                    <span className="text-[9px] font-black text-gray-600 block">Desain Belakang</span>
-                                    {item.backDesign ? (
-                                      <>
-                                        <a href={item.backDesign} target="_blank" rel="noreferrer">
-                                          <img src={item.backDesign} alt="" className="w-full h-20 object-contain rounded bg-white border" />
-                                        </a>
-                                        <button onClick={() => handleDownloadFile(item.backDesign, `belakang-${ord.id}-${idx}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">📥 Download</button>
-                                      </>
-                                    ) : <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>}
+                                  <div className="grid grid-cols-2 gap-2 max-w-[280px]">
+                                    {/* Desain Depan dengan Dark Checkerboard Background agar Font Putih Kelihatan Jelas */}
+                                    <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
+                                      <span className="text-[9px] font-black text-gray-600 block">Desain Depan</span>
+                                      {item.frontDesign ? (
+                                        <>
+                                          <a 
+                                            href={item.frontDesign} 
+                                            target="_blank" 
+                                            rel="noreferrer"
+                                            className="block rounded-xl border overflow-hidden p-1 shadow-inner"
+                                            style={{
+                                              backgroundImage: 'linear-gradient(45deg, #27272a 25%, transparent 25%), linear-gradient(-45deg, #27272a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #27272a 75%), linear-gradient(-45deg, transparent 75%, #27272a 75%)',
+                                              backgroundSize: '10px 10px',
+                                              backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
+                                              backgroundColor: '#18181b'
+                                            }}
+                                          >
+                                            <img src={item.frontDesign} alt="" className="w-full h-20 object-contain mx-auto" />
+                                          </a>
+                                          <button onClick={() => handleDownloadFile(item.frontDesign, `depan-${ord.id}-${idx}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">📥 Download</button>
+                                        </>
+                                      ) : <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>}
+                                    </div>
+
+                                    {/* Desain Belakang dengan Dark Checkerboard Background agar Font Putih Kelihatan Jelas */}
+                                    <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
+                                      <span className="text-[9px] font-black text-gray-600 block">Desain Belakang</span>
+                                      {item.backDesign ? (
+                                        <>
+                                          <a 
+                                            href={item.backDesign} 
+                                            target="_blank" 
+                                            rel="noreferrer"
+                                            className="block rounded-xl border overflow-hidden p-1 shadow-inner"
+                                            style={{
+                                              backgroundImage: 'linear-gradient(45deg, #27272a 25%, transparent 25%), linear-gradient(-45deg, #27272a 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #27272a 75%), linear-gradient(-45deg, transparent 75%, #27272a 75%)',
+                                              backgroundSize: '10px 10px',
+                                              backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0px',
+                                              backgroundColor: '#18181b'
+                                            }}
+                                          >
+                                            <img src={item.backDesign} alt="" className="w-full h-20 object-contain mx-auto" />
+                                          </a>
+                                          <button onClick={() => handleDownloadFile(item.backDesign, `belakang-${ord.id}-${idx}.png`)} className="w-full bg-black text-white text-[9px] font-bold py-1.5 rounded cursor-pointer">📥 Download</button>
+                                        </>
+                                      ) : <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ))}
-                          </td>
-                          <td className="p-3 font-black text-red-600 align-top whitespace-nowrap">{ord.total_price}</td>
-                          <td className="p-3 align-top">
-                            <select value={ord.status} onChange={(e) => handleUpdateStatus(ord.id, e.target.value)} className="font-bold px-3 py-1.5 rounded-xl border text-xs bg-yellow-50 text-yellow-700 cursor-pointer">
-                              <option value="Pending">Pending</option>
-                              <option value="Diproses">Diproses</option>
-                              <option value="Dikirim">Dikirim</option>
-                              <option value="Selesai">Selesai</option>
-                            </select>
-                          </td>
-                          <td className="p-3 text-center align-top whitespace-nowrap">
-                            <button onClick={() => handleDeleteOrder(ord.id)} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer">Hapus</button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                              ))}
+                            </td>
+                            <td className="p-3 font-black text-red-600 align-top whitespace-nowrap">{ord.total_price}</td>
+                            <td className="p-3 align-top">
+                              <select value={ord.status} onChange={(e) => handleUpdateStatus(ord.id, e.target.value)} className="font-bold px-3 py-1.5 rounded-xl border text-xs bg-yellow-50 text-yellow-700 cursor-pointer">
+                                <option value="Pending">Pending</option>
+                                <option value="Diproses">Diproses</option>
+                                <option value="Dikirim">Dikirim</option>
+                                <option value="Selesai">Selesai</option>
+                              </select>
+                            </td>
+                            <td className="p-3 text-center align-top whitespace-nowrap">
+                              <button onClick={() => handleDeleteOrder(ord.id)} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl transition cursor-pointer">Hapus</button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
-        {/* TAB LIVE CHAT ADMIN */}
         {activeTab === 'chats' && (
           <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-[500px]">
             <div className="md:col-span-4 border-r border-gray-200 pr-4 space-y-2">
@@ -671,7 +858,6 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 2: PRODUK (DENGAN FOLDER KATEGORI, SEARCH, & ARCHIVE) */}
         {activeTab === 'products' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
@@ -690,12 +876,57 @@ export default function AdminDashboardPage() {
                   <input type="text" placeholder="Contoh: Custom Kaos Kerajaan" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
                 </div>
                 <div>
-                  <label className="block font-bold mb-1">Harga Jual Diskon *</label>
-                  <input type="text" placeholder="Contoh: Rp 70.000" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
+                  <label className="block font-bold mb-1">Harga Utama / Dasar *</label>
+                  <input type="text" placeholder="Contoh: Rp 65.000" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" required />
                 </div>
                 <div>
                   <label className="block font-bold mb-1">Harga Asli / Coret (Opsional)</label>
-                  <input type="text" placeholder="Contoh: Rp 150.000" value={newOriginalPrice} onChange={(e) => setNewOriginalPrice(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" />
+                  <input type="text" placeholder="Contoh: Rp 100.000" value={newOriginalPrice} onChange={(e) => setNewOriginalPrice(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" />
+                </div>
+
+                <div>
+                  <label className="block font-bold mb-1">Deskripsi Produk</label>
+                  <textarea rows={3} placeholder="Tulis deskripsi bahan, sablon, dll..." value={newDescription} onChange={(e) => setNewDescription(e.target.value)} className="w-full bg-gray-50 border rounded-xl p-2.5 font-semibold text-black focus:outline-none" />
+                </div>
+
+                <div className="bg-zinc-50 p-3 rounded-2xl border border-zinc-200 space-y-2">
+                  <label className="block font-black uppercase text-[10px] tracking-wider text-zinc-800">
+                    Beda Ukuran Beda Harga (Opsional)
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['S', 'M', 'L', 'XL', '2XL', '3XL'].map((sz) => (
+                      <div key={sz} className="space-y-0.5">
+                        <span className="text-[9px] font-bold text-zinc-500">Size {sz}</span>
+                        <input
+                          type="text"
+                          placeholder="Rp 65k"
+                          value={sizePrices[sz] || ''}
+                          onChange={(e) => setSizePrices({ ...sizePrices, [sz]: e.target.value })}
+                          className="w-full bg-white border rounded-lg p-1.5 text-[11px] font-semibold text-black"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-zinc-50 p-3 rounded-2xl border border-zinc-200 space-y-2">
+                  <label className="block font-black uppercase text-[10px] tracking-wider text-zinc-800">
+                    Pilihan Warna Produk
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={colorInput} onChange={(e) => setColorInput(e.target.value)} className="w-8 h-8 rounded border cursor-pointer" />
+                    <span className="font-mono text-[11px]">{colorInput}</span>
+                    <button type="button" onClick={handleAddColor} className="bg-black text-white text-[10px] font-bold px-3 py-1.5 rounded-lg ml-auto cursor-pointer">+ Tambah Warna</button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {productColors.map((col, idx) => (
+                      <div key={idx} className="flex items-center gap-1 bg-white border px-2 py-1 rounded-lg text-[10px] font-bold">
+                        <span className="w-3 h-3 rounded-full border shadow-inner" style={{ backgroundColor: col }}></span>
+                        <span>{col}</span>
+                        <button type="button" onClick={() => handleRemoveColor(col)} className="text-red-600 ml-1 font-bold">×</button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div>
@@ -751,14 +982,26 @@ export default function AdminDashboardPage() {
                   )}
                 </div>
 
-                <div>
-                  <label className="block font-bold mb-1">Upload Foto Produk</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
-                    className="w-full bg-gray-50 border rounded-xl p-2 text-xs font-semibold text-black file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-black file:text-white cursor-pointer"
-                  />
+                <div className="space-y-2">
+                  <label className="block font-bold">Upload Foto Produk (Multi-Slide / Minimal 2 Foto)</label>
+                  <div>
+                    <span className="text-[10px] text-zinc-500 font-bold">Foto Utama (Slide 1):</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setImageFile1(e.target.files?.[0] || null)}
+                      className="w-full bg-gray-50 border rounded-xl p-2 text-xs font-semibold text-black file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-black file:text-white cursor-pointer mt-1"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-zinc-500 font-bold">Foto Kedua (Slide 2 / Opsional):</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setImageFile2(e.target.files?.[0] || null)}
+                      className="w-full bg-gray-50 border rounded-xl p-2 text-xs font-semibold text-black file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-black file:text-white cursor-pointer mt-1"
+                    />
+                  </div>
                 </div>
 
                 <button type="submit" disabled={uploadingImage} className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer">
@@ -772,7 +1015,6 @@ export default function AdminDashboardPage() {
                 <h2 className="text-sm font-black uppercase tracking-wider text-black">
                   Daftar Katalog Produk ({filteredProducts.length} Total)
                 </h2>
-                {/* Kolom Search Produk */}
                 <div className="w-full sm:w-64">
                   <input
                     type="text"
@@ -784,7 +1026,6 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
 
-              {/* TAMPILAN PER FOLDER KATEGORI */}
               <div className="space-y-6 max-h-[600px] overflow-y-auto pr-1">
                 {Object.keys(groupedProducts).length === 0 ? (
                   <div className="text-center py-12 text-gray-400 text-xs italic">
@@ -804,7 +1045,10 @@ export default function AdminDashboardPage() {
                           const isArchived = p.status === 'archived'
                           return (
                             <div key={p.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-3 bg-white shadow-sm transition ${isArchived ? 'opacity-50 border-dashed border-zinc-400' : 'border-zinc-200'}`}>
-                              {p.image && <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm flex-shrink-0" />}
+                              <div className="flex gap-1.5 flex-shrink-0">
+                                {p.image && <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm" />}
+                                {p.image_secondary && <img src={p.image_secondary} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm" />}
+                              </div>
                               <div className="flex-1 min-w-0">
                                 <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
                                 <div className="flex items-center gap-2">
@@ -835,10 +1079,8 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* TAB 3: CMS MULTI-SLIDE BANNER */}
         {activeTab === 'settings' && (
           <div className="space-y-6">
-            
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-black uppercase tracking-wider text-black">Status Tampilkan Teks Banner Hero</h3>
@@ -857,7 +1099,6 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-              
               <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
                 <h2 className="text-sm font-black uppercase tracking-wider text-red-600 border-b pb-2">+ Tambah Slide Banner Gambar & Teks Baru</h2>
                 <form onSubmit={handleAddBannerSlide} className="space-y-3 text-xs">
@@ -911,7 +1152,6 @@ export default function AdminDashboardPage() {
                   )}
                 </div>
               </div>
-
             </div>
           </div>
         )}

@@ -12,6 +12,8 @@ type Product = {
   price: string
   originalPrice: string | null
   image: string | null
+  image_secondary: string | null
+  colors: string[] | null
   status?: string
 }
 
@@ -40,7 +42,6 @@ function ProductsContent() {
 
   useEffect(() => {
     const loadProducts = async () => {
-      // Ambil produk, utamakan yang berstatus aktif (tidak di-OFF-kan/di-arsip)
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -50,7 +51,6 @@ function ProductsContent() {
         console.error('Gagal memuat produk', error.message)
         setProducts([])
       } else {
-        // Filter di sisi client: hanya tampilkan produk yang statusnya 'active' atau belum diset statusnya
         const activeProducts = (data || []).filter((p: any) => p.status !== 'archived')
 
         setProducts(
@@ -61,6 +61,8 @@ function ProductsContent() {
             price: p.price,
             originalPrice: p.original_price,
             image: p.image,
+            image_secondary: p.image_secondary,
+            colors: p.colors,
             status: p.status
           }))
         )
@@ -104,7 +106,6 @@ function ProductsContent() {
     checkAdmin()
   }, [])
 
-  // Kategori Utama di Menu Navigasi Atas
   const baseCategories = [
     { name: 'Semua', value: 'Semua' },
     { name: 'Polosan', value: 'Polosan' },
@@ -112,7 +113,6 @@ function ProductsContent() {
     { name: 'Merchandise', value: 'Custom Merchandise' }
   ]
 
-  // Deteksi kategori kustom lain buatan admin secara dinamis
   const customCategoriesSet = Array.from(
     new Set(
       products
@@ -130,7 +130,6 @@ function ProductsContent() {
     ...customCategoriesSet.map((cat) => ({ name: cat, value: cat }))
   ]
 
-  // Sub-kategori khusus di bawah menu "Polosan"
   const polosanSubCategories = [
     { name: 'Semua Polosan', value: 'Semua' },
     { name: 'Kaos', value: 'Kaos' },
@@ -139,7 +138,6 @@ function ProductsContent() {
     { name: 'Topi', value: 'Topi' }
   ]
 
-  // Logika Filter Produk Berdasarkan Kategori & Sub-Kategori
   const filteredProducts = products.filter((p) => {
     if (searchQuery) {
       return p.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -183,14 +181,6 @@ function ProductsContent() {
 
     return p.category.toLowerCase() === categoryParam.toLowerCase()
   })
-
-  const availableColors = [
-    { name: 'White', hex: '#ffffff', border: 'border-zinc-300' },
-    { name: 'Black', hex: '#111111', border: 'border-black' },
-    { name: 'Gray', hex: '#71717a', border: 'border-zinc-500' },
-    { name: 'Navy', hex: '#1e1b4b', border: 'border-indigo-950' },
-    { name: 'Red', hex: '#7f1d1d', border: 'border-red-900' }
-  ]
 
   const handleAddReview = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -260,7 +250,7 @@ function ProductsContent() {
           })}
         </div>
 
-        {/* SUB-KATEGORI KHUSUS (MUNCUL HANYA KETIKA KATEGORI "POLOSAN" DIPILIH) */}
+        {/* SUB-KATEGORI KHUSUS POLOSAN */}
         {categoryParam === 'Polosan' && (
           <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 bg-zinc-50 px-4 py-2.5 rounded-2xl border border-zinc-200/60">
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 mr-2">Filter Polosan:</span>
@@ -313,32 +303,42 @@ function ProductsContent() {
                     href={`/products/${prod.id}`}
                     className="group bg-white flex flex-col justify-between cursor-pointer space-y-2 pb-3"
                   >
-                    {/* Foto Produk Kotak Bersih */}
+                    {/* Foto Produk Kotak Bersih dengan Multi-Foto Preview (jika ada foto kedua) */}
                     <div className="relative aspect-square bg-zinc-100 rounded-xl overflow-hidden border border-zinc-100">
                       {prod.image && (
                         <img
                           src={prod.image}
                           alt={prod.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition duration-500 ease-out"
+                          className={`w-full h-full object-cover group-hover:scale-105 transition duration-500 ease-out ${prod.image_secondary ? 'group-hover:opacity-0 absolute inset-0' : ''}`}
                         />
                       )}
-                      <span className="absolute top-2 left-2 bg-black text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      {prod.image_secondary && (
+                        <img
+                          src={prod.image_secondary}
+                          alt={`${prod.title} 2`}
+                          className="w-full h-full object-cover opacity-0 group-hover:opacity-100 transition duration-500 ease-out absolute inset-0"
+                        />
+                      )}
+                      <span className="absolute top-2 left-2 bg-black text-white text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider z-10">
                         {prod.category}
                       </span>
                     </div>
 
                     {/* Detail Teks Retail */}
                     <div className="space-y-1.5 px-0.5">
-                      <div className="flex items-center gap-1.5 py-0.5">
-                        {availableColors.map((c) => (
-                          <span
-                            key={c.name}
-                            className={`w-3 h-3 rounded-full border ${c.border} shadow-sm`}
-                            style={{ backgroundColor: c.hex }}
-                            title={c.name}
-                          ></span>
-                        ))}
-                      </div>
+                      {/* PAMFLET WARNA DI CARD LOBBY */}
+                      {prod.colors && Array.isArray(prod.colors) && prod.colors.length > 0 && (
+                        <div className="flex items-center gap-1.5 py-0.5">
+                          {prod.colors.map((hex: string, i: number) => (
+                            <span
+                              key={i}
+                              className="w-3 h-3 rounded-full border border-zinc-300 shadow-sm"
+                              style={{ backgroundColor: hex }}
+                              title={hex}
+                            />
+                          ))}
+                        </div>
+                      )}
 
                       <h4 className="font-semibold text-xs md:text-sm text-zinc-900 line-clamp-2 leading-tight group-hover:underline">
                         {prod.title}
