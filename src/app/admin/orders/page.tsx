@@ -30,6 +30,17 @@ type Product = {
   status?: string
 }
 
+type ProductReview = {
+  id: number
+  product_id: number
+  name: string
+  rating: number
+  comment: string
+  image_url: string | null
+  admin_reply: string | null
+  created_at: string
+}
+
 type HeroBannerSlide = {
   id: number
   tag: string
@@ -38,10 +49,119 @@ type HeroBannerSlide = {
   image_url: string
 }
 
+// Fungsi helper pemetaan akurat kode hex palet warna picker ke Nama Warna Indonesia
+const getColorName = (hex: string) => {
+  if (!hex) return '-'
+  const cleanHex = hex.toLowerCase().trim()
+  
+  const colorMap: { [key: string]: string } = {
+    '#ffffff': 'Putih',
+    '#000000': 'Hitam',
+    '#111111': 'Hitam Pekat',
+    '#71717a': 'Abu-Abu',
+    '#808080': 'Abu-Abu',
+    '#ff0000': 'Merah',
+    '#00ff00': 'Hijau',
+    '#0000ff': 'Biru',
+    '#000080': 'Navy / Biru Dongker',
+    '#001f3f': 'Navy / Biru Dongker',
+    '#ff00ff': 'Magenta',
+    '#ffff00': 'Kuning',
+    '#ffa500': 'Oranye',
+    '#800080': 'Ungu',
+    '#981bc5': 'Ungu',
+    '#61177c': 'Ungu',
+    '#ffc0cb': 'Pink / Merah Muda',
+    '#a52a2a': 'Cokelat',
+  }
+
+  if (colorMap[cleanHex]) {
+    return colorMap[cleanHex]
+  }
+
+  try {
+    let c = cleanHex.replace('#', '')
+    if (c.length === 3) c = c.split('').map(x => x + x).join('')
+    const num = parseInt(c, 16)
+    const r = (num >> 16) & 255
+    const g = (num >> 8) & 255
+    const b = num & 255
+
+    if (r > 240 && g > 240 && b > 240) return 'Putih'
+    if (r < 25 && g < 25 && b < 25) return 'Hitam'
+    if (Math.abs(r - g) < 15 && Math.abs(g - b) < 15) return 'Abu-Abu'
+    
+    // Deteksi Ungu akurat
+    if (r > 70 && b > 70 && g < 110) {
+      return 'Ungu'
+    }
+
+    if (r > g && r > b) return 'Merah'
+    if (g > r && g > b) return 'Hijau'
+    if (b > r && b > g) return (b > 160 ? 'Biru' : 'Navy / Biru Dongker')
+    if (r > 150 && g > 100 && b < 100) return 'Cokelat'
+  } catch (e) {
+    // fallback
+  }
+
+  return hex
+}
+
+// Fungsi helper kompres gambar otomatis katalog
+const compressImage = (file: File, maxWidth = 800, quality = 0.75): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.readAsDataURL(file)
+    reader.onload = (event) => {
+      const img = new Image()
+      img.src = event.target?.result as string
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        let width = img.width
+        let height = img.height
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width)
+          width = maxWidth
+        }
+
+        canvas.width = width
+        canvas.height = height
+
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(file)
+          return
+        }
+
+        ctx.drawImage(img, 0, 0, width, height)
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file)
+              return
+            }
+            const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '') + '.jpg', {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            })
+            resolve(compressedFile)
+          },
+          'image/jpeg',
+          quality
+        )
+      }
+      img.onerror = (error) => reject(error)
+    }
+    reader.onerror = (error) => reject(error)
+  })
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter()
   const [authed, setAuthed] = useState(false)
-  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'settings' | 'chats'>('orders')
+  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'settings' | 'chats' | 'reviews'>('orders')
 
   const [orders, setOrders] = useState<Order[]>([])
   const [chatRooms, setChatRooms] = useState<string[]>([])
@@ -50,12 +170,18 @@ export default function AdminDashboardPage() {
   const [replyMsg, setReplyMsg] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // State untuk Filter Laporan Bulanan / Tahunan & Bagi Hasil (Aman dari SSR error)
+  // State Ulasan Pelanggan untuk Admin
+  const [reviews, setReviews] = useState<ProductReview[]>([])
+  const [adminReplyTexts, setAdminReplyTexts] = useState<{ [key: number]: string }>({})
+
+  // State untuk Filter Laporan Bulanan / Tahunan & Bagi Hasil
   const [reportMonth, setReportMonth] = useState('all')
   const [reportYear, setReportYear] = useState('2026')
   const [profitSharePercentage, setProfitSharePercentage] = useState<number>(50)
 
-  // Set tahun otomatis sesuai device client saat pertama kali render
+  // State untuk melacak kategori folder mana saja yang sedang di-minimize (dilipat)
+  const [minimizedCategories, setMinimizedCategories] = useState<{ [key: string]: boolean }>({})
+
   useEffect(() => {
     setReportYear(String(new Date().getFullYear()))
   }, [])
@@ -102,12 +228,13 @@ export default function AdminDashboardPage() {
       }
       setAuthed(true)
 
-      const [ordersRes, productsRes, bannersRes, settingsRes, chatsRes] = await Promise.all([
+      const [ordersRes, productsRes, bannersRes, settingsRes, chatsRes, reviewsRes] = await Promise.all([
         supabase.from('orders').select('*').order('created_at', { ascending: false }),
         supabase.from('products').select('*').order('created_at', { ascending: false }),
         supabase.from('hero_banners').select('*').order('created_at', { ascending: true }),
         supabase.from('site_settings').select('data').eq('id', 1).maybeSingle(),
-        supabase.from('chats').select('room_id').order('created_at', { ascending: false })
+        supabase.from('chats').select('room_id').order('created_at', { ascending: false }),
+        supabase.from('product_reviews').select('*').order('created_at', { ascending: false })
       ])
 
       if (ordersRes.data) setOrders(ordersRes.data as Order[])
@@ -129,6 +256,9 @@ export default function AdminDashboardPage() {
         if (uniqueRooms.length > 0 && !activeRoom) {
           setActiveRoom(uniqueRooms[0])
         }
+      }
+      if (reviewsRes.data) {
+        setReviews(reviewsRes.data as ProductReview[])
       }
     }
 
@@ -177,12 +307,70 @@ export default function AdminDashboardPage() {
   }
 
   const handleUpdateStatus = async (id: number, newStatus: string) => {
+    const targetOrder = orders.find(ord => ord.id === id)
+
     const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', id)
     if (error) {
       alert('Gagal memperbarui status pesanan.')
       return
     }
+
+    if (newStatus === 'Selesai' && targetOrder && targetOrder.status !== 'Selesai') {
+      const items = extractOrderItemsAndFiles(targetOrder.items)
+
+      for (const item of items) {
+        const { data: matchedProducts } = await supabase
+          .from('products')
+          .select('id, sold_count')
+          .ilike('title', item.title)
+          .limit(1)
+
+        if (matchedProducts && matchedProducts.length > 0) {
+          const prod = matchedProducts[0]
+          const currentSold = Number(prod.sold_count) || 0
+          const addQty = Number(item.quantity) || 1
+
+          await supabase
+            .from('products')
+            .update({ sold_count: currentSold + addQty })
+            .eq('id', prod.id)
+        }
+      }
+    }
+
     setOrders(orders.map((ord) => (ord.id === id ? { ...ord, status: newStatus } : ord)))
+  }
+
+  // Fungsi Hapus Ulasan oleh Admin
+  const handleDeleteReview = async (reviewId: number) => {
+    if (!confirm('Hapus ulasan ini dari toko?')) return
+    const { error } = await supabase.from('product_reviews').delete().eq('id', reviewId)
+    if (error) {
+      alert('Gagal menghapus ulasan.')
+      return
+    }
+    setReviews(reviews.filter(r => r.id !== reviewId))
+    alert('Ulasan berhasil dihapus.')
+  }
+
+  // Fungsi Kirim Balasan Admin ke Ulasan
+  const handleSendAdminReviewReply = async (reviewId: number) => {
+    const replyText = adminReplyTexts[reviewId]
+    if (!replyText || !replyText.trim()) return
+
+    const { error } = await supabase
+      .from('product_reviews')
+      .update({ admin_reply: replyText.trim() })
+      .eq('id', reviewId)
+
+    if (error) {
+      alert('Gagal mengirim balasan ulasan.')
+      return
+    }
+
+    setReviews(reviews.map(r => r.id === reviewId ? { ...r, admin_reply: replyText.trim() } : r))
+    setAdminReplyTexts({ ...adminReplyTexts, [reviewId]: '' })
+    alert('Balasan berhasil dikirim!')
   }
 
   const handleDeleteOrder = async (id: number) => {
@@ -256,7 +444,6 @@ export default function AdminDashboardPage() {
     }]
   }
 
-  // Logika Filter Laporan Berdasarkan Bulan & Tahun
   const filteredOrdersForReport = orders.filter((ord) => {
     const orderDate = new Date(ord.created_at)
     const ordYear = String(orderDate.getFullYear())
@@ -338,6 +525,13 @@ export default function AdminDashboardPage() {
     setProductColors(productColors.filter(c => c !== col))
   }
 
+  const toggleMinimizeCategory = (catName: string) => {
+    setMinimizedCategories(prev => ({
+      ...prev,
+      [catName]: !prev[catName]
+    }))
+  }
+
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTitle || !newPrice) return
@@ -358,9 +552,10 @@ export default function AdminDashboardPage() {
       let imageUrl2 = existingProduct?.image_secondary || ''
 
       if (imageFile1) {
-        const fileExt = imageFile1.name.split('.').pop()
+        const compressedFile1 = await compressImage(imageFile1, 800, 0.75)
+        const fileExt = compressedFile1.name.split('.').pop() || 'jpg'
         const fileName = `${Date.now()}_prod1.${fileExt}`
-        const { error: uploadError } = await supabase.storage.from('designs').upload(fileName, imageFile1)
+        const { error: uploadError } = await supabase.storage.from('designs').upload(fileName, compressedFile1)
         if (uploadError) throw uploadError
         const { data: pubData } = supabase.storage.from('designs').getPublicUrl(fileName)
         imageUrl1 = pubData.publicUrl
@@ -369,11 +564,12 @@ export default function AdminDashboardPage() {
       }
 
       if (imageFile2) {
-        const fileExt = imageFile2.name.split('.').pop()
-        const fileName = `${Date.now()}_prod2.${fileExt}`
-        const { error: uploadError2 } = await supabase.storage.from('designs').upload(fileName, imageFile2)
+        const compressedFile2 = await compressImage(imageFile2, 800, 0.75)
+        const fileExt2 = compressedFile2.name.split('.').pop() || 'jpg'
+        const fileName2 = `${Date.now()}_prod2.${fileExt2}`
+        const { error: uploadError2 } = await supabase.storage.from('designs').upload(fileName2, compressedFile2)
         if (uploadError2) throw uploadError2
-        const { data: pubData2 } = supabase.storage.from('designs').getPublicUrl(fileName)
+        const { data: pubData2 } = supabase.storage.from('designs').getPublicUrl(fileName2)
         imageUrl2 = pubData2.publicUrl
       }
 
@@ -513,9 +709,10 @@ export default function AdminDashboardPage() {
 
     try {
       setUploadingSlide(true)
-      const fileExt = slideImageFile.name.split('.').pop()
+      const compressedSlide = await compressImage(slideImageFile, 1200, 0.75)
+      const fileExt = compressedSlide.name.split('.').pop() || 'jpg'
       const fileName = `hero-banner-${Date.now()}.${fileExt}`
-      const { error: uploadErr } = await supabase.storage.from('designs').upload(fileName, slideImageFile)
+      const { error: uploadErr } = await supabase.storage.from('designs').upload(fileName, compressedSlide)
       if (uploadErr) throw uploadErr
 
       const { data: pub } = supabase.storage.from('designs').getPublicUrl(fileName)
@@ -607,6 +804,9 @@ export default function AdminDashboardPage() {
           <button onClick={() => setActiveTab('chats')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'chats' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'}`}>
             💬 Live Chat Pembeli ({chatRooms.length})
           </button>
+          <button onClick={() => setActiveTab('reviews')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'reviews' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'}`}>
+            ⭐ Ulasan Pelanggan ({reviews.length})
+          </button>
           <button onClick={() => setActiveTab('products')} className={`whitespace-nowrap px-5 py-2.5 rounded-2xl text-xs font-black uppercase tracking-wider transition cursor-pointer ${activeTab === 'products' ? 'bg-black text-white shadow' : 'bg-white text-black border border-gray-200 hover:bg-gray-100'}`}>
             🛍️ Upload & Kelola Katalog ({products.length})
           </button>
@@ -615,9 +815,76 @@ export default function AdminDashboardPage() {
           </button>
         </div>
 
+        {/* TAB MANAJEMEN ULASAN PELANGGAN */}
+        {activeTab === 'reviews' && (
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
+            <h2 className="text-xs font-black uppercase tracking-wider text-gray-500 border-b pb-2">Manajemen Ulasan & Balasan Admin</h2>
+            {reviews.length === 0 ? (
+              <div className="text-center py-16 space-y-2">
+                <span className="text-4xl">⭐</span>
+                <p className="text-xs text-gray-500 font-semibold">Belum ada ulasan masuk.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {reviews.map((rev) => {
+                  const prod = products.find(p => p.id === rev.product_id)
+                  return (
+                    <div key={rev.id} className="bg-zinc-50 p-4 rounded-2xl border border-zinc-200 space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-bold text-xs text-black">Produk ID #{rev.product_id}: {prod?.title || 'Produk'}</p>
+                          <p className="text-[11px] font-bold text-zinc-800 mt-0.5">Pengulas: {rev.name}</p>
+                        </div>
+                        <button onClick={() => handleDeleteReview(rev.id)} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer">
+                          Hapus Ulasan
+                        </button>
+                      </div>
+
+                      <div className="text-yellow-500 text-xs">
+                        {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
+                      </div>
+                      <p className="text-xs text-zinc-700">{rev.comment}</p>
+
+                      {rev.image_url && (
+                        <div className="w-20 h-20 rounded-xl overflow-hidden border">
+                          <img src={rev.image_url} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+
+                      {/* Balasan Admin Sebelumnya */}
+                      {rev.admin_reply && (
+                        <div className="bg-black text-white p-3 rounded-xl text-xs space-y-1">
+                          <p className="font-black text-[10px] text-red-400 uppercase">Balasan Toko (Admin):</p>
+                          <p>{rev.admin_reply}</p>
+                        </div>
+                      )}
+
+                      {/* Form Balas Ulasan */}
+                      <div className="flex gap-2 pt-2">
+                        <input
+                          type="text"
+                          placeholder="Balas ulasan ini sebagai admin..."
+                          value={adminReplyTexts[rev.id] || ''}
+                          onChange={(e) => setAdminReplyTexts({ ...adminReplyTexts, [rev.id]: e.target.value })}
+                          className="flex-1 bg-white border border-zinc-300 rounded-xl px-3 py-2 text-xs font-semibold text-black focus:outline-none"
+                        />
+                        <button
+                          onClick={() => handleSendAdminReviewReply(rev.id)}
+                          className="bg-black text-white font-black px-4 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer"
+                        >
+                          Kirim Balasan
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'orders' && (
           <div className="space-y-6">
-            {/* KOTAK LAPORAN BULANAN / TAHUNAN & BAGI HASIL (COMPACT VERSION) */}
             <div className="bg-zinc-900 text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-3">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-zinc-800 pb-3">
                 <div className="flex items-center gap-2">
@@ -698,7 +965,6 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            {/* DAFTAR PESANAN MASUK */}
             <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-gray-200 space-y-4">
               <h2 className="text-xs font-black uppercase tracking-wider text-gray-400 border-b pb-2">Daftar Pesanan Masuk Pelanggan</h2>
               {orders.length === 0 ? (
@@ -738,20 +1004,14 @@ export default function AdminDashboardPage() {
                                 <div key={idx} className="space-y-2 pb-2 border-b border-gray-100 last:border-0">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <p className="font-semibold text-black">
-                                      {item.title} (Ukuran: <span className="text-red-600 font-black">{item.size}</span>) x{item.quantity}
+                                      {item.title} (Ukuran: <span className="text-red-600 font-black">{item.size}</span>, Warna: 
+                                      <span className="inline-flex items-center gap-1.5 ml-1 align-middle font-bold bg-gray-100 px-2 py-0.5 rounded border text-black">
+                                        <span className="w-3 h-3 rounded-full border shadow-inner inline-block" style={{ backgroundColor: item.color || '#000' }}></span>
+                                        <span>{getColorName(item.color)}</span>
+                                      </span>) x{item.quantity}
                                     </p>
-                                    {item.color && (
-                                      <div className="flex items-center gap-1 bg-gray-100 px-2 py-0.5 rounded-md border text-[10px]">
-                                        <span 
-                                          className="w-3 h-3 rounded-full border border-zinc-400 shadow-inner inline-block" 
-                                          style={{ backgroundColor: item.color }} 
-                                        />
-                                        <span className="font-mono font-bold">{item.color}</span>
-                                      </div>
-                                    )}
                                   </div>
                                   <div className="grid grid-cols-2 gap-2 max-w-[280px]">
-                                    {/* Desain Depan dengan Dark Checkerboard Background agar Font Putih Kelihatan Jelas */}
                                     <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
                                       <span className="text-[9px] font-black text-gray-600 block">Desain Depan</span>
                                       {item.frontDesign ? (
@@ -775,7 +1035,6 @@ export default function AdminDashboardPage() {
                                       ) : <span className="text-[10px] text-gray-400 block py-6">Tidak ada</span>}
                                     </div>
 
-                                    {/* Desain Belakang dengan Dark Checkerboard Background agar Font Putih Kelihatan Jelas */}
                                     <div className="bg-gray-50 p-2 rounded-xl border text-center space-y-1">
                                       <span className="text-[9px] font-black text-gray-600 block">Desain Belakang</span>
                                       {item.backDesign ? (
@@ -983,7 +1242,7 @@ export default function AdminDashboardPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block font-bold">Upload Foto Produk (Multi-Slide / Minimal 2 Foto)</label>
+                  <label className="block font-bold">Upload Foto Katalog (Otomatis Dikompres)</label>
                   <div>
                     <span className="text-[10px] text-zinc-500 font-bold">Foto Utama (Slide 1):</span>
                     <input
@@ -1005,7 +1264,7 @@ export default function AdminDashboardPage() {
                 </div>
 
                 <button type="submit" disabled={uploadingImage} className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer">
-                  {uploadingImage ? 'Mengunggah & Menyimpan...' : (editingId !== null ? 'SIMPAN PERUBAHAN PRODUK' : 'SIMPAN & TAYANGKAN REAL-TIME')}
+                  {uploadingImage ? 'Mengompres & Menyimpan...' : (editingId !== null ? 'SIMPAN PERUBAHAN PRODUK' : 'SIMPAN & TAYANGKAN REAL-TIME')}
                 </button>
               </form>
             </div>
@@ -1032,47 +1291,58 @@ export default function AdminDashboardPage() {
                     Tidak ada produk yang cocok dengan pencarian "{searchQuery}".
                   </div>
                 ) : (
-                  Object.entries(groupedProducts).map(([categoryName, items]) => (
-                    <div key={categoryName} className="space-y-3 bg-zinc-50/60 p-4 rounded-2xl border border-zinc-200">
-                      <div className="flex items-center justify-between border-b border-zinc-200 pb-2">
-                        <h3 className="font-black text-xs uppercase tracking-wider text-zinc-900 flex items-center gap-2">
-                          📁 Folder: {categoryName} <span className="text-[10px] bg-black text-white px-2 py-0.5 rounded-full">({items.length})</span>
-                        </h3>
-                      </div>
+                  Object.entries(groupedProducts).map(([categoryName, items]) => {
+                    const isMinimized = minimizedCategories[categoryName] || false
+                    return (
+                      <div key={categoryName} className="space-y-3 bg-zinc-50/60 p-4 rounded-2xl border border-zinc-200">
+                        <div 
+                          onClick={() => toggleMinimizeCategory(categoryName)}
+                          className="flex items-center justify-between border-b border-zinc-200 pb-2 cursor-pointer select-none hover:bg-zinc-100/80 px-2 py-1 rounded-xl transition"
+                        >
+                          <h3 className="font-black text-xs uppercase tracking-wider text-zinc-900 flex items-center gap-2">
+                            📁 Folder: {categoryName} <span className="text-[10px] bg-black text-white px-2 py-0.5 rounded-full">({items.length})</span>
+                          </h3>
+                          <button type="button" className="text-xs font-bold text-zinc-600 bg-white border border-zinc-300 px-3 py-1 rounded-lg shadow-sm">
+                            {isMinimized ? '▼ Tampilkan (Maximize)' : '▲ Lipat (Minimize)'}
+                          </button>
+                        </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {items.map((p) => {
-                          const isArchived = p.status === 'archived'
-                          return (
-                            <div key={p.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-3 bg-white shadow-sm transition ${isArchived ? 'opacity-50 border-dashed border-zinc-400' : 'border-zinc-200'}`}>
-                              <div className="flex gap-1.5 flex-shrink-0">
-                                {p.image && <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm" />}
-                                {p.image_secondary && <img src={p.image_secondary} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm" />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[11px] text-red-600 font-black">{p.price}</span>
-                                  {p.original_price && <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>}
+                        {!isMinimized && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                            {items.map((p) => {
+                              const isArchived = p.status === 'archived'
+                              return (
+                                <div key={p.id} className={`p-3 rounded-2xl border flex items-center justify-between gap-3 bg-white shadow-sm transition ${isArchived ? 'opacity-50 border-dashed border-zinc-400' : 'border-zinc-200'}`}>
+                                  <div className="flex gap-1.5 flex-shrink-0">
+                                    {p.image && <img src={p.image} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm" />}
+                                    {p.image_secondary && <img src={p.image_secondary} alt="" className="w-12 h-12 object-cover rounded-xl bg-white shadow-sm" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h4 className="font-bold text-xs text-black truncate">{p.title}</h4>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] text-red-600 font-black">{p.price}</span>
+                                      {p.original_price && <span className="text-[10px] text-gray-400 line-through">{p.original_price}</span>}
+                                    </div>
+                                    <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${isArchived ? 'bg-zinc-500 text-white' : 'bg-emerald-600 text-white'}`}>
+                                      {isArchived ? '📦 Diarsipkan (Disembunyikan)' : '✨ Aktif (Tampil)'}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="flex flex-col gap-1 flex-shrink-0">
+                                    <button onClick={() => handleToggleArchiveProduct(p)} className={`font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer ${isArchived ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}>
+                                      {isArchived ? 'Aktifkan' : 'Arsip'}
+                                    </button>
+                                    <button onClick={() => handleStartEdit(p)} className="bg-zinc-100 hover:bg-zinc-200 text-black font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer">Edit</button>
+                                    <button onClick={() => handleDeleteProduct(p.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer">Hapus</button>
+                                  </div>
                                 </div>
-                                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${isArchived ? 'bg-zinc-500 text-white' : 'bg-emerald-600 text-white'}`}>
-                                  {isArchived ? '📦 Diarsipkan (Disembunyikan)' : '✨ Aktif (Tampil)'}
-                                </span>
-                              </div>
-                              
-                              <div className="flex flex-col gap-1 flex-shrink-0">
-                                <button onClick={() => handleToggleArchiveProduct(p)} className={`font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer ${isArchived ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-amber-100 text-amber-800 hover:bg-amber-200'}`}>
-                                  {isArchived ? 'Aktifkan' : 'Arsip'}
-                                </button>
-                                <button onClick={() => handleStartEdit(p)} className="bg-zinc-100 hover:bg-zinc-200 text-black font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer">Edit</button>
-                                <button onClick={() => handleDeleteProduct(p.id)} className="bg-red-50 text-red-600 hover:bg-red-100 font-bold px-2.5 py-1 rounded-lg text-[10px] transition cursor-pointer">Hapus</button>
-                              </div>
-                            </div>
-                          )
-                        })}
+                              )
+                            })}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -1125,7 +1395,7 @@ export default function AdminDashboardPage() {
                     />
                   </div>
                   <button type="submit" disabled={uploadingSlide} className="w-full bg-black hover:bg-gray-800 text-white font-black py-3 rounded-xl uppercase tracking-wider transition cursor-pointer">
-                    {uploadingSlide ? 'Mengunggah...' : 'SIMPAN SLIDE BANNER BARU'}
+                    {uploadingSlide ? 'Mengompres & Mengunggah...' : 'SIMPAN SLIDE BANNER BARU'}
                   </button>
                 </form>
               </div>

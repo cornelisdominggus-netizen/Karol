@@ -11,16 +11,6 @@ export default function Home() {
   const [allProducts, setAllProducts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  // State untuk Minimize / Maximize Folder Kategori (Default: Terbuka / false)
-  const [minimizedFolders, setMinimizedFolders] = useState<{ [key: string]: boolean }>({})
-
-  const toggleFolder = (folderName: string) => {
-    setMinimizedFolders(prev => ({
-      ...prev,
-      [folderName]: !prev[folderName]
-    }))
-  }
-
   // State untuk Multi-Slide Banner Gambar + Teks dari Supabase
   const [bannerSlides, setBannerSlides] = useState<any[]>([
     {
@@ -35,7 +25,6 @@ export default function Home() {
 
   useEffect(() => {
     const fetchData = async () => {
-      // 1. Ambil data banner slides dan pengaturan website dari Supabase
       const [bannersRes, settingsRes] = await Promise.all([
         supabase.from('hero_banners').select('*').order('created_at', { ascending: true }),
         supabase.from('site_settings').select('data').eq('id', 1).maybeSingle()
@@ -52,7 +41,6 @@ export default function Home() {
         }
       }
 
-      // 2. Ambil Produk Pilihan Terbaru (Kecuali yang berstatus 'archived')
       const { data: latestData } = await supabase
         .from('products')
         .select('*')
@@ -62,12 +50,11 @@ export default function Home() {
 
       if (latestData) setLatestProducts(latestData)
 
-      // 3. Ambil SEMUA Katalog Produk Aktif (Kecuali yang berstatus 'archived')
       const { data: allData } = await supabase
         .from('products')
         .select('*')
         .neq('status', 'archived')
-        .order('title', { ascending: true })
+        .order('created_at', { ascending: false })
 
       if (allData) setAllProducts(allData)
 
@@ -77,7 +64,6 @@ export default function Home() {
     fetchData()
   }, [])
 
-  // Auto slide timer (berganti otomatis setiap 4 detik)
   useEffect(() => {
     if (bannerSlides.length <= 1) return
     const timer = setInterval(() => {
@@ -86,7 +72,6 @@ export default function Home() {
     return () => clearInterval(timer)
   }, [bannerSlides.length])
 
-  // Kategori Utama
   const categories = [
     {
       name: 'Kaos',
@@ -141,13 +126,16 @@ export default function Home() {
 
     const targetUrl = `/products/${prod.id}`
 
+    const rating = prod.rating || 4.9
+    const soldCount = prod.sold_count || 25
+
     return (
       <div
         key={prod.id}
         onClick={() => router.push(targetUrl)}
-        className="group bg-white border border-zinc-200/80 hover:border-black rounded-2xl p-2 flex flex-col justify-between cursor-pointer transition shadow-sm w-full"
+        className="group bg-white border border-zinc-200/80 hover:border-black rounded-2xl p-2.5 flex flex-col justify-between cursor-pointer transition shadow-sm w-full h-full"
       >
-        <div className="relative w-full h-36 bg-zinc-100 rounded-xl overflow-hidden">
+        <div className="relative w-full h-36 bg-zinc-100 rounded-xl overflow-hidden flex-shrink-0">
           <span className="absolute top-2 left-2 bg-black text-white text-[7px] font-black px-1.5 py-0.5 rounded-full z-10 uppercase">
             {prod.category}
           </span>
@@ -156,23 +144,33 @@ export default function Home() {
           )}
         </div>
 
-        <div className="pt-2 px-1 space-y-1">
-          {/* PAMFLET WARNA DI CARD LOBBY */}
-          {prod.colors && Array.isArray(prod.colors) && prod.colors.length > 0 && (
-            <div className="flex items-center gap-1 py-0.5">
-              {prod.colors.map((hex: string, i: number) => (
-                <span
-                  key={i}
-                  className="w-2.5 h-2.5 rounded-full border border-zinc-300 shadow-xs"
-                  style={{ backgroundColor: hex }}
-                  title={hex}
-                />
-              ))}
-            </div>
-          )}
+        <div className="pt-2 px-1 space-y-1.5 flex-1 flex flex-col justify-between">
+          <div className="space-y-1">
+            {prod.colors && Array.isArray(prod.colors) && prod.colors.length > 0 && (
+              <div className="flex items-center gap-1 py-0.5">
+                {prod.colors.map((hex: string, i: number) => (
+                  <span
+                    key={i}
+                    className="w-2.5 h-2.5 rounded-full border border-zinc-300 shadow-xs"
+                    style={{ backgroundColor: hex }}
+                    title={hex}
+                  />
+                ))}
+              </div>
+            )}
 
-          <h4 className="font-bold text-[11px] text-zinc-900 line-clamp-1">{prod.title}</h4>
-          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-[11px] text-zinc-900 line-clamp-1">{prod.title}</h4>
+
+            <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold pt-0.5">
+              <div className="flex items-center gap-1">
+                <span className="text-yellow-500">★</span>
+                <span className="text-zinc-800 font-bold">{rating}</span>
+              </div>
+              <span>Terjual {soldCount}+</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-zinc-100 mt-1">
             <span className="text-[11px] font-black text-zinc-950">{prod.price}</span>
             <button
               onClick={(e) => {
@@ -189,22 +187,13 @@ export default function Home() {
     )
   }
 
-  // Mengelompokkan semua produk berdasarkan kategori/folder
-  const groupedProducts = allProducts.reduce((acc: any, prod: any) => {
-    const cat = prod.category || 'Lainnya'
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(prod)
-    return acc
-  }, {})
-
   const activeSlide = bannerSlides[currentSlide] || bannerSlides[0]
 
   return (
     <main className="min-h-screen bg-white text-black pb-16">
       
-      {/* HERO SECTION: MULTI-SLIDE BANNER DINAMIS */}
+      {/* HERO SECTION */}
       <section className="bg-zinc-950 text-white py-12 px-6 md:px-12 relative overflow-hidden min-h-[340px] flex items-center">
-        
         {activeSlide?.image_url && (
           <div className="absolute inset-0 z-0 transition-opacity duration-1000">
             <img src={activeSlide.image_url} alt="Banner" className="w-full h-full object-cover opacity-50" />
@@ -213,7 +202,6 @@ export default function Home() {
         )}
 
         <div className="max-w-7xl mx-auto w-full flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
-          
           {showBannerText && bannerSlides.length > 0 ? (
             <div className="flex-1 space-y-4 text-left z-10">
               <span className="bg-white/10 border border-white/20 text-zinc-300 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
@@ -255,11 +243,10 @@ export default function Home() {
               </div>
             </Link>
           </div>
-
         </div>
       </section>
 
-      {/* 2. PRODUK PILIHAN TERBARU */}
+      {/* 2. PRODUK PILIHAN TERBARU (KOTAK UKURAN KONSISTEN) */}
       <section className="max-w-7xl mx-auto px-4 md:px-12 pt-8 space-y-4">
         <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
           <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
@@ -277,7 +264,7 @@ export default function Home() {
         ) : (
           <div className="flex gap-3 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {latestProducts.map((prod) => (
-              <div key={prod.id} className="w-[170px] sm:w-[190px] flex-shrink-0 snap-start">
+              <div key={prod.id} className="w-[180px] sm:w-[200px] flex-shrink-0 snap-start flex">
                 {renderProductCard(prod)}
               </div>
             ))}
@@ -317,53 +304,23 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 4. FOLDER KATEGORI BERDASARKAN FOLDER (MINIMIZE & MAXIMIZE) & SEMUA PRODUK MUNCUL */}
+      {/* 4. PRODUK KESELURUHAN */}
       <section className="max-w-7xl mx-auto px-4 md:px-12 pt-10 space-y-6">
         <div className="flex justify-between items-center border-b border-zinc-100 pb-2.5">
           <h2 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-900">
-            Katalog Berdasarkan Folder & Produk Keseluruhan
+            PRODUK KESELURUHAN
           </h2>
           <span className="text-[10px] font-bold text-zinc-400 uppercase">Total: {allProducts.length} Produk</span>
         </div>
 
         {loading ? (
-          <div className="py-12 text-center text-xs font-bold text-zinc-400">Memuat katalog lengkap...</div>
-        ) : Object.keys(groupedProducts).length === 0 ? (
+          <div className="py-12 text-center text-xs font-bold text-zinc-400">Memuat produk keseluruhan...</div>
+        ) : allProducts.length === 0 ? (
           <div className="py-12 text-center text-xs text-zinc-400">Belum ada produk tersimpan.</div>
         ) : (
-          Object.keys(groupedProducts).map((categoryName) => {
-            const isMinimized = minimizedFolders[categoryName] || false
-            const productsInFolder = groupedProducts[categoryName]
-
-            return (
-              <div key={categoryName} className="bg-zinc-50 border border-zinc-200 rounded-3xl p-5 md:p-6 space-y-4 shadow-sm">
-                
-                <div 
-                  onClick={() => toggleFolder(categoryName)}
-                  className="flex justify-between items-center cursor-pointer select-none"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-black"></span>
-                    <h3 className="text-sm font-black uppercase tracking-wider text-zinc-900">
-                      FOLDER: {categoryName} <span className="text-xs text-zinc-500 font-normal">({productsInFolder.length} Produk)</span>
-                    </h3>
-                  </div>
-                  <button 
-                    type="button"
-                    className="text-xs font-bold bg-white border border-zinc-300 hover:border-black px-3 py-1.5 rounded-xl uppercase transition shadow-sm cursor-pointer"
-                  >
-                    {isMinimized ? 'Maximize [+]' : 'Minimize [-]'}
-                  </button>
-                </div>
-
-                {!isMinimized && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 pt-2">
-                    {productsInFolder.map(renderProductCard)}
-                  </div>
-                )}
-              </div>
-            )
-          })
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 pt-2">
+            {allProducts.map(renderProductCard)}
+          </div>
         )}
       </section>
 

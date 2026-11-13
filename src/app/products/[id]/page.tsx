@@ -8,6 +8,17 @@ import { supabase } from '@/lib/supabase'
 
 const Mockup3D = dynamic(() => import('@/components/Mockup3D'), { ssr: false })
 
+type ProductReview = {
+  id: number
+  product_id: number
+  name: string
+  rating: number
+  comment: string
+  image_url: string | null
+  admin_reply: string | null
+  created_at: string
+}
+
 function ShareButton({ productTitle }: { productTitle?: string }) {
   const handleShare = async () => {
     const shareData = {
@@ -32,7 +43,7 @@ function ShareButton({ productTitle }: { productTitle?: string }) {
     <button
       type="button"
       onClick={handleShare}
-      className="w-full flex items-center justify-center gap-2.5 py-4 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-black uppercase tracking-widest transition-all duration-300 active:scale-95 cursor-pointer shadow-lg mt-3"
+      className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 text-xs font-black uppercase tracking-widest transition-all duration-300 active:scale-95 cursor-pointer shadow-lg mt-3"
     >
       <span className="text-sm">🔗</span> BAGIKAN PRODUK
     </button>
@@ -67,13 +78,20 @@ function ProductDetailContent() {
 
   const [toastMessage, setToastMessage] = useState<string | null>(null)
 
+  const [reviews, setReviews] = useState<ProductReview[]>([])
+  const [reviewerName, setReviewerName] = useState('')
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewComment, setReviewComment] = useState('')
+  const [reviewImageFile, setReviewImageFile] = useState<File | null>(null)
+  const [submittingReview, setSubmittingReview] = useState(false)
+
   const showToast = (msg: string) => {
     setToastMessage(msg)
     setTimeout(() => setToastMessage(null), 3500)
   }
 
   useEffect(() => {
-    const fetchDbProduct = async () => {
+    const fetchDbProductAndReviews = async () => {
       let data = null
 
       if (!isNaN(Number(productId))) {
@@ -105,11 +123,21 @@ function ProductDetailContent() {
         if (data.colors && Array.isArray(data.colors) && data.colors.length > 0) {
           setSelectedColor(data.colors[0])
         }
+
+        const { data: revData } = await supabase
+          .from('product_reviews')
+          .select('*')
+          .eq('product_id', data.id)
+          .order('created_at', { ascending: false })
+
+        if (revData) {
+          setReviews(revData as ProductReview[])
+        }
       }
 
       setLoadingDb(false)
     }
-    fetchDbProduct()
+    fetchDbProductAndReviews()
   }, [productId])
 
   const productTitle = dbProduct?.title || dbProduct?.name || `Custom ${apparelType.toUpperCase()} Premium`
@@ -170,7 +198,6 @@ function ProductDetailContent() {
     back: { image: previewImageBack, scale: designScale, x: positionX, y: positionY }
   }), [previewImageFront, previewImageBack, designScale, positionX, positionY])
 
-  // DIPERBAIKI: Menggunakan format 'image/png' agar transparansi tetap terjaga murni tanpa background hitam!
   const compressImage = (base64Str: string, maxWidth = 600): Promise<string> => {
     return new Promise((resolve) => {
       const img = new Image()
@@ -188,10 +215,9 @@ function ProductDetailContent() {
         canvas.width = width
         canvas.height = height
         const ctx = canvas.getContext('2d')
-        // JANGAN isi fillRect dengan warna putih/hitam agar transparan asli terjaga
         ctx?.clearRect(0, 0, width, height)
         ctx?.drawImage(img, 0, 0, width, height)
-        resolve(canvas.toDataURL('image/png')) // WAJIB PNG
+        resolve(canvas.toDataURL('image/png'))
       }
       img.onerror = () => resolve(base64Str)
     })
@@ -231,6 +257,63 @@ function ProductDetailContent() {
     }
   }
 
+  const handleAddReview = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!reviewerName.trim() || !reviewComment.trim() || !dbProduct) return
+
+    setSubmittingReview(true)
+    try {
+      let uploadedImageUrl = null
+
+      if (reviewImageFile) {
+        const fileExt = reviewImageFile.name.split('.').pop() || 'jpg'
+        const fileName = `review-${dbProduct.id}-${Date.now()}.${fileExt}`
+        const { error: uploadErr } = await supabase.storage.from('designs').upload(fileName, reviewImageFile)
+        if (uploadErr) throw uploadErr
+
+        const { data: pub } = supabase.storage.from('designs').getPublicUrl(fileName)
+        uploadedImageUrl = pub.publicUrl
+      }
+
+      const { data: newRev, error: revErr } = await supabase
+        .from('product_reviews')
+        .insert([{
+          product_id: Number(dbProduct.id),
+          name: reviewerName.trim(),
+          rating: Number(reviewRating),
+          comment: reviewComment.trim(),
+          image_url: uploadedImageUrl
+        }])
+        .select()
+        .single()
+
+      if (revErr || !newRev) throw revErr
+
+      const updatedReviews = [newRev as ProductReview, ...reviews]
+      setReviews(updatedReviews)
+
+      const totalRatingSum = updatedReviews.reduce((acc, r) => acc + r.rating, 0)
+      const newAverageRating = Number((totalRatingSum / updatedReviews.length).toFixed(1))
+
+      await supabase
+        .from('products')
+        .update({ rating: newAverageRating })
+        .eq('id', dbProduct.id)
+
+      setDbProduct({ ...dbProduct, rating: newAverageRating })
+
+      setReviewerName('')
+      setReviewComment('')
+      setReviewRating(5)
+      setReviewImageFile(null)
+      alert('Ulasan dan foto berhasil dikirim! Terima kasih.')
+    } catch (err: any) {
+      alert(err.message || 'Gagal mengirim ulasan.')
+    } finally {
+      setSubmittingReview(false)
+    }
+  }
+
   if (loadingDb) {
     return (
       <main className="min-h-screen bg-zinc-950 text-white flex items-center justify-center text-xs font-bold">
@@ -240,7 +323,7 @@ function ProductDetailContent() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-white py-8 px-4 sm:px-6 md:px-10 selection:bg-white selection:text-black relative">
+    <main className="min-h-screen bg-zinc-950 text-white py-6 px-3 sm:px-6 md:px-10 selection:bg-white selection:text-black relative">
       
       {toastMessage && (
         <div className="fixed top-6 right-6 z-[99999] bg-zinc-900 border border-zinc-700 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
@@ -249,27 +332,28 @@ function ProductDetailContent() {
         </div>
       )}
 
-      {!isCustom3DProduct ? (
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-            <Link href="/" className="hover:text-white">Beranda</Link> / <Link href="/products" className="hover:text-white">Katalog</Link> / <span className="text-zinc-300 font-bold">{productTitle}</span>
-          </div>
+      <div className="max-w-7xl mx-auto space-y-8">
+        <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+          <Link href="/" className="hover:text-white">Beranda</Link> / <Link href="/products" className="hover:text-white">Katalog</Link> / <span className="text-zinc-300 font-bold">{productTitle}</span>
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-            <div className="lg:col-span-7 space-y-4">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-4 shadow-2xl overflow-hidden aspect-square flex items-center justify-center relative">
-                <img src={currentMainImage} alt={productTitle} className="w-full h-full object-cover rounded-2xl" />
-                <span className="absolute top-6 left-6 bg-red-600 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-wider">
+        {!isCustom3DProduct ? (
+          <div className="flex flex-col md:grid md:grid-cols-12 gap-4 md:gap-8 items-start">
+            
+            <div className="w-full md:col-span-5 space-y-3 flex-shrink-0">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl md:rounded-3xl p-2.5 md:p-4 shadow-2xl overflow-hidden aspect-square flex items-center justify-center relative">
+                <img src={currentMainImage} alt={productTitle} className="w-full h-full object-cover rounded-xl md:rounded-2xl" />
+                <span className="absolute top-4 left-4 bg-red-600 text-white text-[9px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                   {dbProduct?.category || 'Apparel Series'}
                 </span>
               </div>
               {productImages.length > 1 && (
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   {productImages.map((imgUrl, idx) => (
                     <button
                       key={idx}
                       onClick={() => setActiveImageIdx(idx)}
-                      className={`w-20 h-20 rounded-2xl overflow-hidden border-2 transition cursor-pointer bg-zinc-900 ${activeImageIdx === idx ? 'border-white' : 'border-zinc-800 opacity-60 hover:opacity-100'}`}
+                      className={`w-14 h-14 md:w-20 md:h-20 rounded-xl overflow-hidden border-2 transition cursor-pointer bg-zinc-900 ${activeImageIdx === idx ? 'border-white' : 'border-zinc-800 opacity-60 hover:opacity-100'}`}
                     >
                       <img src={imgUrl} alt="" className="w-full h-full object-cover" />
                     </button>
@@ -278,36 +362,46 @@ function ProductDetailContent() {
               )}
             </div>
 
-            <div className="lg:col-span-5 bg-zinc-900 border border-zinc-800 p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6">
-              <div className="space-y-2 border-b border-zinc-800 pb-4">
-                <h1 className="text-2xl sm:text-3xl font-black uppercase tracking-tight text-white">
+            <div className="w-full md:col-span-7 bg-zinc-900 border border-zinc-800 p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-2xl space-y-4 md:space-y-6">
+              <div className="space-y-1.5 border-b border-zinc-800 pb-3">
+                <h1 className="text-lg md:text-3xl font-black uppercase tracking-tight text-white">
                   {productTitle}
                 </h1>
-                <div className="flex items-baseline gap-3 pt-1">
-                  <span className="text-2xl font-black text-red-500">{getCurrentPrice()}</span>
+                <div className="flex items-baseline gap-3 pt-0.5">
+                  <span className="text-xl md:text-2xl font-black text-red-500">{getCurrentPrice()}</span>
                   {originalPrice && <span className="text-xs text-zinc-500 line-through font-semibold">{originalPrice}</span>}
                 </div>
               </div>
 
+              <div className="flex items-center gap-3 text-xs font-bold text-zinc-400 border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-1">
+                  <span className="text-yellow-500 text-sm">★</span>
+                  <span className="text-white font-black">{dbProduct?.rating || 4.9}</span>
+                  <span className="text-zinc-500">({reviews.length})</span>
+                </div>
+                <span>•</span>
+                <span>Terjual {dbProduct?.sold_count || 25}+</span>
+              </div>
+
               {dbProduct?.description && (
-                <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
+                <div className="text-xs text-zinc-400 leading-relaxed bg-zinc-950 p-3.5 rounded-xl border border-zinc-800">
                   <p className="font-bold text-zinc-300 mb-1 uppercase text-[10px]">Deskripsi Produk:</p>
                   {dbProduct.description}
                 </div>
               )}
 
               {dbProduct?.colors && Array.isArray(dbProduct.colors) && dbProduct.colors.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-zinc-300 uppercase">
-                    Warna Tersedia: <span className="text-zinc-500 font-normal">{selectedColor}</span>
+                    Warna: <span className="text-zinc-500 font-normal">{selectedColor}</span>
                   </label>
-                  <div className="flex items-center gap-2.5 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {dbProduct.colors.map((hex: string, idx: number) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => setSelectedColor(hex)}
-                        className={`w-8 h-8 rounded-full border-2 transition cursor-pointer shadow-sm ${selectedColor === hex ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900 scale-110 border-white' : 'border-zinc-700'}`}
+                        className={`w-7 h-7 rounded-full border-2 transition cursor-pointer shadow-sm ${selectedColor === hex ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900 scale-110 border-white' : 'border-zinc-700'}`}
                         style={{ backgroundColor: hex }}
                         title={hex}
                       />
@@ -316,15 +410,15 @@ function ProductDetailContent() {
                 </div>
               )}
 
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <label className="block text-xs font-bold text-zinc-300 uppercase">Size / Ukuran</label>
-                <div className="grid grid-cols-6 gap-2">
+                <div className="grid grid-cols-6 gap-1.5">
                   {['S', 'M', 'L', 'XL', '2XL', '3XL'].map((size) => (
                     <button
                       key={size}
                       type="button"
                       onClick={() => setSelectedSize(size)}
-                      className={`py-2.5 rounded-xl text-xs font-bold uppercase transition border cursor-pointer ${
+                      className={`py-2 rounded-xl text-xs font-bold uppercase transition border cursor-pointer ${
                         selectedSize === size ? 'bg-white text-black border-white shadow' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white'
                       }`}
                     >
@@ -334,12 +428,12 @@ function ProductDetailContent() {
                 </div>
               </div>
 
-              <div className="space-y-4 pt-4 border-t border-zinc-800">
+              <div className="space-y-3 pt-3 border-t border-zinc-800">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center border border-zinc-800 rounded-xl w-32 overflow-hidden bg-zinc-950">
-                    <button type="button" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="px-4 py-3 text-xs font-bold text-zinc-400 hover:text-white transition">−</button>
+                  <div className="flex items-center border border-zinc-800 rounded-xl w-28 overflow-hidden bg-zinc-950">
+                    <button type="button" onClick={() => setQuantity(Math.max(1, quantity - 1))} className="px-3 py-2 text-xs font-bold text-zinc-400 hover:text-white transition">−</button>
                     <span className="flex-1 text-center text-xs font-black">{quantity}</span>
-                    <button type="button" onClick={() => setQuantity(quantity + 1)} className="px-4 py-3 text-xs font-bold text-zinc-400 hover:text-white transition">+</button>
+                    <button type="button" onClick={() => setQuantity(quantity + 1)} className="px-3 py-2 text-xs font-bold text-zinc-400 hover:text-white transition">+</button>
                   </div>
                   <span className="text-xs text-zinc-500 font-bold">Stok Tersedia</span>
                 </div>
@@ -347,7 +441,7 @@ function ProductDetailContent() {
                 <button
                   type="button"
                   onClick={handleAddToCart}
-                  className="w-full bg-white hover:bg-zinc-200 text-black font-black py-4 rounded-2xl uppercase tracking-widest text-xs transition shadow-xl cursor-pointer"
+                  className="w-full bg-white hover:bg-zinc-200 text-black font-black py-3.5 rounded-2xl uppercase tracking-widest text-xs transition shadow-xl cursor-pointer"
                 >
                   ADD TO CART
                 </button>
@@ -355,14 +449,9 @@ function ProductDetailContent() {
                 <ShareButton productTitle={productTitle} />
               </div>
             </div>
-          </div>
-        </div>
-      ) : (
-        <div className="max-w-7xl mx-auto space-y-6">
-          <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-            <Link href="/" className="hover:text-white">Beranda</Link> / <Link href="/products" className="hover:text-white">Katalog</Link> / <span className="text-zinc-300 font-bold">{productTitle}</span>
-          </div>
 
+          </div>
+        ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             <div className="lg:col-span-7 bg-zinc-900 border border-zinc-800 rounded-3xl p-4 shadow-2xl flex flex-col sticky top-6">
               <div className="flex flex-wrap justify-between items-center mb-3 px-2 z-10 gap-2">
@@ -411,6 +500,16 @@ function ProductDetailContent() {
                   <span className="text-xl font-black text-red-500">{getCurrentPrice()}</span>
                   {originalPrice && <span className="text-xs text-zinc-500 line-through font-semibold">{originalPrice}</span>}
                 </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-xs font-bold text-zinc-400 border-b border-zinc-800 pb-4">
+                <div className="flex items-center gap-1">
+                  <span className="text-yellow-500 text-sm">★</span>
+                  <span className="text-white font-black">{dbProduct?.rating || 4.9}</span>
+                  <span className="text-zinc-500">({reviews.length} Ulasan)</span>
+                </div>
+                <span>•</span>
+                <span>Terjual {dbProduct?.sold_count || 25}+</span>
               </div>
 
               {dbProduct?.description && (
@@ -552,8 +651,114 @@ function ProductDetailContent() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* ULASAN & FOTO PEMBELI + RESPON ADMIN */}
+        <div className="border-t border-zinc-800 pt-12 space-y-8">
+          <h2 className="text-xs md:text-sm font-black uppercase tracking-widest text-white">
+            Ulasan & Foto Pembeli ({reviews.length})
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+            <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2">
+              {reviews.length === 0 ? (
+                <p className="text-xs text-zinc-500 italic">Belum ada ulasan untuk produk ini. Jadilah yang pertama mengulas!</p>
+              ) : (
+                reviews.map((rev) => (
+                  <div key={rev.id} className="bg-zinc-900 p-4 rounded-2xl border border-zinc-800 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-xs text-white">{rev.name}</span>
+                      <span className="text-[10px] text-zinc-500">{new Date(rev.created_at).toLocaleDateString('id-ID')}</span>
+                    </div>
+                    <div className="text-yellow-500 text-xs">
+                      {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
+                    </div>
+                    <p className="text-xs text-zinc-300">{rev.comment}</p>
+                    
+                    {rev.image_url && (
+                      <div className="mt-2 w-24 h-24 rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950">
+                        <img src={rev.image_url} alt="Bukti Foto" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+
+                    {/* 🔥 RESPON PENJUAL / ADMIN */}
+                    {rev.admin_reply && (
+                      <div className="mt-3 bg-zinc-950 border border-zinc-800 p-3 rounded-xl space-y-1">
+                        <p className="font-black text-[10px] text-red-500 uppercase">Admin DSCPL Wear:</p>
+                        <p className="text-xs text-zinc-300">{rev.admin_reply}</p>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <form onSubmit={handleAddReview} className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800 space-y-3 text-xs">
+              <h3 className="font-bold text-white uppercase">Tulis Ulasan & Kirim Foto Hasil Jadi</h3>
+              
+              <div>
+                <label className="block font-bold mb-1 text-zinc-300">Nama Anda *</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Budi Santoso"
+                  value={reviewerName}
+                  onChange={(e) => setReviewerName(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-2.5 font-medium text-white focus:outline-none focus:border-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-zinc-300">Rating Bintang *</label>
+                <select
+                  value={reviewRating}
+                  onChange={(e) => setReviewRating(Number(e.target.value))}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-2.5 font-bold text-white focus:outline-none cursor-pointer"
+                >
+                  <option value={5}>★★★★★ (Sangat Puas)</option>
+                  <option value={4}>★★★★☆ (Puas)</option>
+                  <option value={3}>★★★☆☆ (Cukup)</option>
+                  <option value={2}>★★☆☆☆ (Kurang)</option>
+                  <option value={1}>★☆☆☆☆ (Sangat Buruk)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-zinc-300">Komentar / Pengalaman *</label>
+                <textarea
+                  rows={3}
+                  placeholder="Kualitas sablon dan bahannya mantap banget..."
+                  value={reviewComment}
+                  onChange={(e) => setReviewComment(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-2.5 font-medium text-white focus:outline-none resize-none focus:border-white"
+                  required
+                ></textarea>
+              </div>
+
+              <div>
+                <label className="block font-bold mb-1 text-zinc-300">Upload Foto Produk (Opsional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setReviewImageFile(e.target.files?.[0] || null)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl p-2 text-xs font-semibold text-white file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-white file:text-black cursor-pointer"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submittingReview}
+                className="w-full bg-white hover:bg-zinc-200 text-black font-bold py-3 rounded-xl uppercase tracking-wider transition cursor-pointer shadow"
+              >
+                {submittingReview ? 'Mengirim Ulasan...' : 'Kirim Ulasan & Foto'}
+              </button>
+            </form>
+
+          </div>
         </div>
-      )}
+
+      </div>
+
     </main>
   )
 }

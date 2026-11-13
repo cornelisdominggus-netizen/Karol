@@ -30,6 +30,37 @@ export default function CheckoutPage() {
   const [agree, setAgree] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  // Fungsi helper helper penampil nama warna agar konsisten di WhatsApp & Checkout
+  const getColorDisplayName = (colorData: any) => {
+    if (!colorData) return '-'
+    if (typeof colorData === 'object' && colorData.name) {
+      return colorData.name
+    }
+    const hex = String(colorData).toLowerCase().trim()
+    const mapping: { [key: string]: string } = {
+      '#ffffff': 'Putih',
+      '#000000': 'Hitam',
+      '#111111': 'Hitam Pekat',
+      '#71717a': 'Abu-Abu',
+      '#808080': 'Abu-Abu',
+      '#ff0000': 'Merah',
+      '#00ff00': 'Hijau',
+      '#008000': 'Hijau',
+      '#0000ff': 'Biru',
+      '#000080': 'Navy / Biru Dongker',
+      '#ff00ff': 'Magenta',
+      '#ffff00': 'Kuning',
+      '#ffa500': 'Oranye',
+      '#ff8c00': 'Oranye',
+      '#800080': 'Ungu',
+      '#981bc5': 'Ungu',
+      '#61177c': 'Ungu',
+      '#ffc0cb': 'Pink / Merah Muda',
+      '#a52a2a': 'Cokelat',
+    }
+    return mapping[hex] || (typeof colorData === 'string' && !colorData.startsWith('#') ? colorData : 'Warna Custom')
+  }
+
   useEffect(() => {
     const loadCart = () => {
       const saved = localStorage.getItem('dscpl_cart')
@@ -253,11 +284,11 @@ export default function CheckoutPage() {
         })
       }
 
-      const itemsSummary = processedCart.map(i => `• ${i.title} (Ukuran: ${i.size}) x${i.quantity}`).join('\n')
+      // Format WhatsApp menyertakan Ukuran & Nama Warna yang jelas
+      const itemsSummary = processedCart.map(i => `• ${i.title} (Ukuran: ${i.size || '-'}, Warna: ${getColorDisplayName(i.color)}) x${i.quantity}`).join('\n')
       const totalPriceStr = 'Rp ' + totalNum.toLocaleString('id-ID')
-      const chosenCourierStr = `${selectedRate.courier_name.toUpperCase()} - ${selectedRate.courier_service_name} (Estimasi ${selectedRate.duration})`
+      const chosenCourierStr = `${selectedRate.courier_name.toUpperCase()} ${selectedRate.courier_service_name} (Estimasi ${selectedRate.duration})`
 
-      // 1. Simpan ke Supabase untuk mendapatkan ID Pesanan asli secara otomatis
       const { data: insertedOrder, error } = await supabase
         .from('orders')
         .insert([
@@ -285,10 +316,9 @@ export default function CheckoutPage() {
       setCart([])
       window.dispatchEvent(new Event('dscpl_cart_updated'))
 
-      const adminWhatsAppNumber = '62895345414336' // Nomor WhatsApp resmi DSCPL WEAR
-      const designLinksText = processedCart.map(i => `• ${i.title}\n  - Depan: ${i.frontDesignImage || 'Tidak ada'}\n  - Belakang: ${i.backDesignImage || 'Tidak ada'}`).join('\n')
+      const adminWhatsAppNumber = '62895345414336'
+      const designLinksText = processedCart.map(i => `• ${i.title}\nDepan: ${i.frontDesignImage || 'Tidak ada'}\nBelakang: ${i.backDesignImage || 'Tidak ada'}`).join('\n')
       
-      // 2. Format pesan WhatsApp otomatis terisi lengkap dengan ID pesanan, data pembeli, dan rincian harga
       const messageText = `Halo Admin DSCPL WEAR, saya ingin konfirmasi pesanan baru:
 
 *ID Pesanan*: #${orderId}
@@ -513,7 +543,9 @@ ${designLinksText}
 
                       <div className="flex-1 min-w-0">
                         <h4 className="font-black text-xs text-zinc-900 truncate">{item.title}</h4>
-                        <p className="text-[10px] text-zinc-500 font-semibold">Ukuran: {item.size} | Qty: {item.quantity}</p>
+                        <p className="text-[10px] text-zinc-500 font-semibold">
+                          Ukuran: {item.size || '-'} {item.color ? `| Warna: ${getColorDisplayName(item.color)}` : ''} | Qty: {item.quantity}
+                        </p>
                         <p className="font-black text-xs text-red-600 mt-0.5">{item.price}</p>
                       </div>
                     </div>
